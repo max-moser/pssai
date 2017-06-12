@@ -1,0 +1,102 @@
+planning horizon: period of consecutive days, starting at 1
+fixed number of each tool available
+
+request = tools of one kind, present for X consecutive days, delivery in certain time window, tools picked up on the day after request completed by ONE vehicle
+for different tools => separate requests
+
+central depot location => tools are there at the beginning & end of planning horizon
+
+also possible to pick up a tool from customer and deliver it to other customer (without visiting depot inbetween)
+
+daily route of a vehicle MUST begin & end @depot. end of day => unload all tools @depot
+
+vehicles: any number we want, have the same capacity, total size on board must not exceed capacity.
+distance / day limited.
+may return to the depot several times/day to load/unload tools.
+however, exchanging tools between vehicles during a day = FORBIDDEN.
+but: dropping and picking up at the same day is allowed (only for this vehicle).
+
+distance: Floor of the euclidean distance.
+
+costs:
+per distance travelled, for using a vehicle for a day, for using a vehicle at all. for the tools in use => (max use per day).
+
+2 basic conditions for an input to be solvable: each customer location can be visited within max trip distance and size of each tool does not exceed the vehicle capacity
+
+delivery of a request can not be split: must be deilivered by one vehicle on the same day, and all tools picked up alltogheter after the number of requested days => also no overlapping requests of the same tool kind at the same location.
+
+locations can be visited several times/day, but only to pickup or deliver tools, but not to leave tools there (no depot use of locations).
+
+
+
+========== instance data format ==========
+
+text form and XML form
+IDs => positive, depot ID = 0
+entries ordered by ID
+
+DATASET
+NAME
+
+DAYS
+CAPACITY
+MAX_TRIP_DISTANCE
+DEPOT_COORDINATE
+
+VEHICLE_COST
+VEHICLE_DAY_COST
+DISTANCE_COST
+
+TOOLS = X
+ID SIZE #AVAILABLE COST
+
+COORDINATES = X
+ID X Y
+
+REQUESTS = X
+ID ID_CUSTOMER FIRST_DAY LAST_DAY #DAYS TOOL_ID #TOOLS
+
+DISTANCE (OPTIONAL) // DISTANCE MATRIX
+x rows, x columns, where x = #coordinates
+
+
+
+========== solution data format ==========
+
+text form and XML form
+
+DATASET // where does the solution belong to?
+NAME
+
+MAX_NUMBER_OF_VEHICLES // section is optional
+MUMBER_OF_VEHICLE_DAYS
+TOOL_USE
+DISTANCE
+COST
+
+DAY = X // day by day
+NUMBER_OF_VEHICLES // on this day
+ID_VEHICLE ID_ROUTE +routeinfo, e.g. 0 2 7 -5 0
+// 1 R 0 2 7 -5 0 means vehicle 1 drives route R, starts @depot, delivers tools of request 2 to location of request 2, then goes straight to location 7 and delivers the tools, then straight to location 5 and LOADS the tools, then back to the depot, end of the day for vehicle 1.
+....
+
+
+=> for debugging => add extra state to the solution text file
+
+e.g. 
+DAY = 10
+NUMBER_OF_VEHICLES = 1
+START_DEPOT = 2 1 1 3 // extra debugging: how many tools are @depot @start of the day
+FINISH_DEPOT = 2 1 1 3 // extra debugging: how many tools are @depot @end of the day
+5 R 0 1 0 // standard line of the route of vehicle 5
+5 V 1 -1 0 0 0 // extra debugging: vehicle 5 first visit. delivers -1 tool of id 1 => LOADS 1 tools of id 1
+5 V 2 0 0 0 0 // extra debugging: vehicle 5 second visit. no tools returned or loaded.
+5 D 82 // total distance of vehicle 5 on this day => distance 0 0 => 1 = 41
+
+
+
+validator
+
+solutions can be validated via validator!
+>> SolutionCVRPTWUI.py -i instance.txt -s solution.txt
+>> SolutionCVRPTWUI.py -h // explains options of the validator
