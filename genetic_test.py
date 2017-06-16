@@ -166,7 +166,7 @@ if __name__ == "__main__":
     population_size = len(population)
     debug_print([str(p) for p in population])
 
-    for i in range(0, 30_000):
+    for i in range(0, 30000):
         debug_print ("\nIteration: =====" + str(i) + "=======")
         sum_fitness_values = functools.reduce(operator.add, [p.fit for p in population], 0)
         # debug_print(sum_fitness_values)
