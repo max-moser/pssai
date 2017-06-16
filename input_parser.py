@@ -61,6 +61,22 @@ class Request:
             .format(self.id, self.customer_id, self.first_day, self.last_day, self.num_days, self.tool_id, self.num_tools)
 
 
+class Problem:
+    def __init__(self, tools=None, customers=None, requests=None):
+        self.tools = tools
+        self.customers = customers
+        self.requests = requests
+
+        if self.tools is None:
+            self.tools = {}
+
+        if self.customers is None:
+            self.customers = {}
+
+        if self.requests is None:
+            self.requests = {}
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description='Genetic algorithm for the VeRoLog Solver Challenge 2017')
     parser.add_argument('file', help='problem instance, txt-file')
@@ -127,6 +143,7 @@ def main(argv=None):
     #pretty print via json.dumps
     print(json.dumps(problem, sort_keys=True, indent=4, default=str))
 
+    #problem = Problem(problem['tools'], problem['customers'], problem['requests'])
     genetic_solver.solve_problem(problem)
 
 
