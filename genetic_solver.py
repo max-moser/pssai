@@ -92,7 +92,7 @@ class Candidate:
         return usage
 
     def get_problems_for_tool(self, tool_id):
-        """Calculate a list of problems for the
+        """Calculate a list of problems for the tool_id
 
         :param tool_id:
         :return:
@@ -125,6 +125,7 @@ class Candidate:
                     return False
 
         return True
+
 
     def fitness_heuristic(self):
         max_cars = 0
@@ -189,6 +190,7 @@ class Candidate:
         #        sum_distance * distance_cost + \
         #        sum_tool_costs
 
+
     def mutate(self):
         """Perform random mutations on Candidate a
 
@@ -200,6 +202,103 @@ class Candidate:
         if r < PARAMETERS['mutation_possibility']:
             # TODO
             return
+
+    def get_extended_daylist(self):
+        '''
+        create day_list of length days, where all the currently running requests
+        (=the tools are at the customer's place)are included
+        :return:
+        '''
+        new_daylist = [{} for _ in range(problem_instance['days'])]
+        for (day_idx, requests_on_day) in enumerate(self.day_list):
+            new_daylist[day_idx].update(requests_on_day)
+            if day_idx != 0:
+                # append all the elems from the last day, which do not have the value 'fetch'
+                # and are not on the current day (so they are still running)
+                new_daylist[day_idx].update({key: 'running' for (key, value) in new_daylist[day_idx - 1].items()
+                     if (value != 'fetch') and not (key in requests_on_day)})
+
+        return new_daylist
+
+
+    def repair(self):
+        usages = self.get_tool_usages()
+
+        # create a datastructure from day_list
+        self.get_extended_daylist()
+
+        # loop over each tool, and look for problems. This approach works, because the tools don't interfere with each other
+        for (tool_id, usage_on_day) in enumerate(usages):
+
+            # get the largest peak and its day + the max available for the tool
+            largest_peak_day, largest_peak = max(enumerate(usage_on_day), key=lambda p: p[1])
+            available = problem_instance['tools'][tool_id].num_available
+
+            # while the largest peak is greater than allowed, reduce it!
+            while largest_peak > available:
+                #TODO liefert nur requests die an dem tag starten und nicht alle die grad laufen
+                request_list = self.day_list[largest_peak_day]
+
+                #try to move a tool of the request_list, accept the movement, if we reduce the largest peak
+                forbidden_index_list = []
+                while new_peak > largest_peak:
+
+                    # TODO forbidden_index_list wird dezeit nicht benötigt => entweder löschen, oder
+                    # TODO    die methode umschreiben, sodass nur ein request behandelt wird (größe nach sortiert)
+
+                    request_to_move_idx = choose_request_to_move(largest_peak_day, tool_id, request_list, forbidden_index_list, usage_on_day)
+                    # TODO schleife über die moves, check ob durch den move der largest peak kleiner wurde
+                    # TODO wenn ja accept diesen als neuen largest peak
+                    # TODO wenn nein, mach mit dem nächsten weiter
+
+                    forbidden_index_list.append(request_to_move_idx)
+
+
+                    new_peak = get_largest_peak
+                largest_peak = new_peak
+
+
+def choose_request_to_move(largest_peak_day, tool_id, request_list, forbidden_index_list, usage_day):
+    ''' for a certain tool id, find possible movements of requests to move them away from the peak day.
+    :param largest_peak_day:
+    :param tool_id:
+    :param request_list:
+    :param forbidden_index_list:
+    :param usage_day:
+    :return: a dictionary with all requests of the day and the tool, and possible movements of them, sorted by num_tools
+    '''
+    possible_start_days = {}
+
+    # loop over the requests from the peak day, starting with the largest one
+    request_list = sorted(request_list.items(), key=lambda x: x[1], reverse=True) # TODO sort in usages? => performance
+    for (request_id, request_deliver) in enumerate(request_list):
+        possible_start_days[request_id] = []
+
+        # we are only interested in requests which 1) are not forbidden and 2) deliver tools
+        if (request_id in forbidden_index_list) or (request_deliver == False): # TODO exclude fetch day
+            continue
+
+        # loop over possible start days
+        request_length = problem_instance['requests'][request_id].num_days
+        first_day      = problem_instance['requests'][request_id].first_day
+        last_day       = problem_instance['requests'][request_id].last_day
+
+        # keep track if we visited the first day yet
+        first_day_visited = False
+
+        # check if we could move the request, so that the tools are not at the customer at the collision day.
+        for day in range (first_day, last_day):
+
+            # do not add the start day!
+            if (first_day_visited == False) and (tool_id in usage_day[day]):
+                first_day_visited = True
+                continue
+
+            # to not collide with the peak-day, the request has to either end before or start after the collision day
+            if ((day + request_length) < largest_peak_day) or (day > largest_peak_day):
+                possible_start_days[day].append(day)
+
+    return possible_start_days
 
 
 def initial_population(population_size):
@@ -260,8 +359,10 @@ def initial_population(population_size):
                     # TODO invalid solution
                     # TODO worsen fitness function? set valid flag to false?
 
-
-        population.append(Candidate(day_list))
+        candidate = Candidate(day_list)
+        #candidate.repair()
+        print(candidate.get_extended_daylist())
+        population.append(candidate)
     return population
 
 
