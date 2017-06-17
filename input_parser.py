@@ -60,7 +60,7 @@ class Request:
         return 'REQUEST #{}: customer_id={}; first_day={}; last_day={}; num_days={}; tool_id={}; num_tools={};'\
             .format(self.id, self.customer_id, self.first_day, self.last_day, self.num_days, self.tool_id, self.num_tools)
 
-
+#TODO REMOVE ME?
 class Problem:
     def __init__(self, tools=None, customers=None, requests=None):
         self.tools = tools

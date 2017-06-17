@@ -10,7 +10,7 @@ def debug_print(*args, **kwargs):
     if dbg:
         print(*args, **kwargs)
 
-
+#TODO REMOVE ME?
 class Validity:
     def __init__(self, valid=True, problem_at_day=None, problem_tool=None, involved_requests=None):
         self.valid = valid
@@ -52,6 +52,7 @@ class Candidate:
     def __eq__(self, other):
         return self.day_list == other.day_list
 
+    #TODO REMOVE ME?
     def get_tool_usages(self):
         day_list = self.day_list
         # usage:
@@ -63,20 +64,20 @@ class Candidate:
             usage[tool_id] = [0 for _ in day_list]
 
         # walk through every day
-        for (idx, req_list) in enumerate(day_list):
+        for (idx, req_dict) in enumerate(day_list):
 
             # for each day, walk through every request on that day
-            for _req in req_list:
+            for (req_id, req_state) in req_dict.items():
 
                 # calculate the variables that we need
-                request = problem_instance['requests'][_req['id']]
+                request = problem_instance['requests'][req_id]
                 tool_id = request.tool_id
                 delivery_amount = 0
                 fetch_amount = 0
 
                 # if it's the beginning of the request (i.e. delivery), add to the delivery amount
                 # else to the fetch amount
-                if not _req['return']:
+                if req_state == 'deliver':
                     delivery_amount = request.num_tools
                 else:
                     fetch_amount = request.num_tools
@@ -91,6 +92,7 @@ class Candidate:
 
         return usage
 
+    #TODO REMOVE ME?
     def get_problems_for_tool(self, tool_id):
         """Calculate a list of problems for the tool_id
 
@@ -145,20 +147,20 @@ class Candidate:
                 optimistic_max[tool_key] = 0
 
             # calculate the deliver/fetch tuple for each day
-            for request in requests_on_day:
-                tool_request = problem_instance['requests'][request['id']]
+            for (req_id, req_status) in requests_on_day.items():
+                tool_request = problem_instance['requests'][req_id]
                 tool_id = tool_request.tool_id
                 in_out = tools_in_out[day_index][tool_id]
 
-                if request['return']:
+                if req_status == 'fetch':
                     in_out.add_in(tool_request.num_tools)
                 else:
                     in_out.add_out(tool_request.num_tools)
 
         for (day_index, requests_on_day) in enumerate(self.day_list):
             pass
-            for request in requests_on_day:
-                request = problem_instance['requests'][request['id']]
+            for (req_id, req_status) in requests_on_day.items():
+                request = problem_instance['requests'][req_id]
 
                 # TODO get no. cars, get tsp
                 # - auslastung der autos
@@ -225,7 +227,7 @@ class Candidate:
         usages = self.get_tool_usages()
 
         # create a datastructure from day_list
-        self.get_extended_daylist()
+        extended_daylist = self.get_extended_daylist()
 
         # loop over each tool, and look for problems. This approach works, because the tools don't interfere with each other
         for (tool_id, usage_on_day) in enumerate(usages):
@@ -237,7 +239,7 @@ class Candidate:
             # while the largest peak is greater than allowed, reduce it!
             while largest_peak > available:
                 #TODO liefert nur requests die an dem tag starten und nicht alle die grad laufen
-                request_list = self.day_list[largest_peak_day]
+                request_list = extended_daylist[largest_peak_day]
 
                 #try to move a tool of the request_list, accept the movement, if we reduce the largest peak
                 forbidden_index_list = []
@@ -310,57 +312,15 @@ def initial_population(population_size):
     # for each request, pick a random starting day and the corresponding end day
     population = []
     for i in range(0, population_size):
-        day_list = [[] for _ in range(problem_instance['days'])]
+        day_list = [{} for _ in range(problem_instance['days'])]
 
         for key, request in problem_instance['requests'].items():
             start_day = random.randrange(request.first_day, request.last_day + 1) # randrange excludes the stop point of the range.
-            day_list[start_day]                   .append({'id': request.id, 'return': False})
-            day_list[start_day + request.num_days].append({'id': request.id, 'return': True })
-
-        # usage:
-        # Key:   TOOL ID
-        # Value: List of length = len(day_list),
-        #         each index denotes how many tools are required at that day
-        usage = {}
-        available = {}
-        for tool_id in problem_instance['tools'].keys():
-            usage[tool_id] = [0 for _ in day_list]
-            available[tool_id] = problem_instance['tools'][tool_id].num_available
-
-        # walk through every day
-        for (idx, req_list) in enumerate(day_list):
-
-            # for each day, walk through every request on that day
-            for _req in req_list:
-
-                # calculate the variables that we need
-                request = problem_instance['requests'][_req['id']]
-                tool_id = request.tool_id
-                delivery_amount = 0
-                fetch_amount = 0
-
-                # if it's the beginning of the request (i.e. delivery), add to the delivery amount
-                # else to the fetch amount
-                if not _req['return']:
-                    delivery_amount = request.num_tools
-                else:
-                    fetch_amount = request.num_tools
-
-                # assuming that we are lucky, we can fetch tools and directly deliver them to another customer
-                usage[tool_id][idx] += delivery_amount
-                usage[tool_id][idx] -= fetch_amount
-
-                # don't forget to take those tools into account which are still at a customer's place
-                if idx > 0:
-                    usage[tool_id][idx] += usage[tool_id][idx - 1]
-
-                if usage[tool_id][idx] > available[tool_id]:
-                    pass
-                    # TODO invalid solution
-                    # TODO worsen fitness function? set valid flag to false?
+            day_list[start_day]                   [request.id] = 'deliver'
+            day_list[start_day + request.num_days][request.id] = 'fetch'
 
         candidate = Candidate(day_list)
-        #candidate.repair()
+        # TODO candidate.repair()
         print(candidate.get_extended_daylist())
         population.append(candidate)
     return population
