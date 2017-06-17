@@ -33,6 +33,9 @@ class InOut:
     def add_out(self, value):
         self.out_ += value
 
+    def __str__(self):
+        return 'INOUT (' + str(self.in_) + ', ' + str(self.out_) + ')'
+
 
 class Candidate:
     def __init__(self, day_list, fitness_=None):
@@ -129,7 +132,7 @@ class Candidate:
         sum_distance = 0
         tsp_per_day  = []
 
-        tools_in_out   = [[] for _ in range(problem_instance['days'])]
+        tools_in_out   = [{} for _ in range(problem_instance['days'])]
         optimistic_max = {}
 
         for (day_index, requests_on_day) in enumerate(self.day_list):
@@ -137,25 +140,24 @@ class Candidate:
 
             # initialise the deliver/fetch tuple
             for tool_key in problem_instance['tools'].keys():
-                tools_in_out[day_index][tool_key] = InOut(0, 0)
+                tools_in_out[day_index].update({tool_key:InOut(0, 0)})
                 optimistic_max[tool_key] = 0
 
             # calculate the deliver/fetch tuple for each day
             for request in requests_on_day:
-                req = request
-                tool_id = req.tool_id
-                req = problem_instance['requests'][request['id']]
+                tool_request = problem_instance['requests'][request['id']]
+                tool_id = tool_request.tool_id
                 in_out = tools_in_out[day_index][tool_id]
 
-                if req['return']:
-                    in_out.add_in(req.num_tools)
+                if request['return']:
+                    in_out.add_in(tool_request.num_tools)
                 else:
-                    in_out.add_out(req.num_tools)
+                    in_out.add_out(tool_request.num_tools)
 
         for (day_index, requests_on_day) in enumerate(self.day_list):
             pass
             for request in requests_on_day:
-                req = problem_instance['requests'][request['id']]
+                request = problem_instance['requests'][request['id']]
 
                 # TODO get no. cars, get tsp
                 # - auslastung der autos
