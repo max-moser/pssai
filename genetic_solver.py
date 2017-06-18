@@ -1,7 +1,7 @@
 import random
 import datetime
 
-PARAMETERS = {'population_size': 100, 'mutation_possibility': 0.25, 'number_of_generations': 30000, 'survivor_size': 5}
+PARAMETERS = {'population_size': 100, 'survivor_size': 5, 'mutation_possibility': 0.0015, 'number_of_generations': 30000}
 problem_instance = None
 dbg = True
 
@@ -186,7 +186,7 @@ class Candidate:
             break
             # TODO sum_tool_costs += tool.max * problem_instance['tools'][tool.id].price
 
-        return 0
+        return 1
         # return max_cars * cars_per_day + \
         #        sum_cars * cars_per_day + \
         #        sum_distance * distance_cost + \
@@ -483,37 +483,41 @@ def solve_problem(problem):
     #print("\n", population[1])
     #print("\n", new_candidate)
 
-    '''for i in range(0, PARAMETERS['number_of_generations']):
+    for i in range(1):# TODO range(0, PARAMETERS['number_of_generations']):
         debug_print ('\nIteration: =====' + str(i) + '=======')
-        sum_fitness_values = functools.reduce(operator.add, [p.fit for p in population], 0)
-        # debug_print(sum_fitness_values)
+        sum_fitness_values = sum(p.fit for p in population)
+        debug_print(sum_fitness_values)
 
         fitness_range = make_fitness_range(population)
-        
-        # crossover
-        # select crossover candidates (candidates with higher fitness have a higher chance to get reproduced)
-        (one, two) = find_mating_pair(fitness_range, sum_fitness_values)
+        debug_print(fitness_range)
 
-        combined = combine(one, two)
+        # create new population through crossover
+        new_population = []
+        for i in range(PARAMETERS['population_size'] - PARAMETERS['survivor_size']):
 
-        # mutate (happens randomly)
-        combined.mutate()
+            # select crossover candidates (candidates with higher fitness have a higher chance to get reproduced)
+            (one, two) = find_mating_pair(fitness_range, sum_fitness_values)
+            new_candidate = combine(one, two)
+            # mutate (happens randomly)
+            new_candidate.mutate()
 
-        if combined in population:
-            debug_print('WHAT IS HAPPENING')
-            continue
+            if new_candidate in population: # TODO can this still happen often enough?
+                debug_print('WHAT IS HAPPENING')
+                i -= 1
+                continue
 
-        debug_print('1: ' + str(one))
-        debug_print('2: ' + str(two))
-        debug_print('Combined: ' + combined.content)
+            #debug_print('1: ', str(one))
+            #debug_print('2: ', str(two))
+            #debug_print('Combined: ', new_candidate)
+            new_population.append(new_candidate)
 
         # select survivors (the best ones survive)
-        population.append(combined)
-        population = sorted(population, key=lambda p: p.fit)[-population_size:]
-        debug_print('Population after mutation: ' + str([str(p) for p in population]))
-        debug_print('Best: ' + str(population[-1:][0]))
-        debug_print('Worst: ' + str(population[0]))'''
+        population = sorted(population, key=lambda p: p.fit)[-PARAMETERS['survivor_size']:]
+        new_population.append(population)
 
+        #debug_print('Population after mutation: ' + str([str(p) for p in population]))
+        debug_print('Best: '  + str(population[-1:][0]))
+        debug_print('Worst: ' + str(population[0]))
 
     end = datetime.datetime.now()
     print('Done: ' + end.isoformat())
