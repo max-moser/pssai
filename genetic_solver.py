@@ -2,7 +2,7 @@ import random
 import datetime
 
 PARAMETERS = {'population_size': 100, 'survivor_size': 5, 'mutation_possibility': 0.0015,
-              'number_of_generations': 30000}
+              'number_of_generations': 30000, 'max_depth_start': 2, 'max_depth_increase': 3, 'max_depth': 17}
 problem_instance = None
 dbg = True
 
@@ -283,6 +283,9 @@ class Candidate:
                 active = False
 
     def repair2(self):
+        # TODO remove me! => just for debugging
+        # self.smallest_peak = {k: 10000000000 for k, v in problem_instance['tools'].items()}
+
         usages = self.get_tool_usages()
         extended_day_list = self.get_extended_daylist()
 
@@ -319,30 +322,41 @@ class Candidate:
                 last_start_day = request.last_day
                 start_day_dict[request.id] = list(range(first_start_day, last_start_day + 1))
 
-            repair_result = self.rec_repair2(start_day_dict, extended_day_list)
+            max_depth = PARAMETERS['max_depth_start']
+            while True:
+                print("max_depth:", max_depth)
+                repair_result = self.rec_repair2(start_day_dict, extended_day_list, 0, max_depth)
 
-            if repair_result is None:
-                print("WE ARE SORRY BUT YOUR PROBLEM CANNOT GET FIXED.")
-            else:
-                print("WE FIXED YOUR PROBLEM FOR YOU MATE")
-                # to create a "normal" day-list from the extended day-list,
-                # we only need to delete the "running" entries from the latter
-                for requests_per_day in repair_result:
-                    for (req, state) in requests_per_day.items():
-                        if state == "running":
-                            requests_per_day.pop(req, None)
+                if repair_result is None:
+                    if max_depth < PARAMETERS['max_depth']:
+                        max_depth += PARAMETERS['max_depth_increase']
+                        continue
+                    else:
+                        print("WE ARE SORRY BUT YOUR PROBLEM CANNOT GET FIXED.")
+                        return
+                else:
+                    print("WE FIXED YOUR PROBLEM FOR YOU MATE")
+                    # to create a "normal" day-list from the extended day-list,
+                    # we only need to delete the "running" entries from the latter
 
-                # make the result stick
-                self.day_list = repair_result
-                pass
+                    new_day_list = []
+                    for requests_per_day in repair_result:
+                        new_day_list.append({req_id: state for req_id, state in requests_per_day.items() if state != "running"})
 
-    def rec_repair2(self, move_dict, current_extended_daylist):
+                    # make the result stick
+                    self.day_list = new_day_list
+                    return
+
+
+
+    def rec_repair2(self, move_dict, current_extended_daylist, depth, max_depth):
         """
 
         :param move_dict:
         :param current_extended_daylist:
         :return:
         """
+
         chosen_request = None
         max_impact = 0
         next_move_dict = move_dict.copy()
@@ -351,7 +365,7 @@ class Candidate:
 
         for req_id in move_dict:
             # if the list of possible start days is not empty...
-            if move_dict[req_id]:
+            if move_dict[req_id]: #if not empty
                 tmp_request = problem_instance["requests"][req_id]
                 if tmp_request.num_tools > max_impact:
                     max_impact = tmp_request.num_tools
@@ -366,7 +380,10 @@ class Candidate:
         # we don't want to move the same request twice in recursive calls
         next_move_dict[chosen_request.id] = []
 
+        # look at all the possible positions for the chosen request
         for position in move_dict[chosen_request.id]:
+            #print("depth, chosen request, chosen position:", depth, chosen_request, position)
+            #print("move dict:", move_dict, "\n")
             tmp_ext_daylist = current_extended_daylist.copy()
             start_day = position
             end_day = position + chosen_request.num_days
@@ -381,20 +398,27 @@ class Candidate:
                     tmp_ext_daylist[day_idx][chosen_request.id] = "deliver"
                 elif end_day == day_idx:
                     tmp_ext_daylist[day_idx][chosen_request.id] = "fetch"
-                elif start_day <= day_idx <= end_day:
+                elif start_day < day_idx < end_day:
                     tmp_ext_daylist[day_idx][chosen_request.id] = "running"
 
+            # get usages for our tool and the new daylist
             tmp_usages = tool_usages_from_extended_daylist(tmp_ext_daylist)[tool_id]
             new_peak = max(tmp_usages)
+
+            # TODO remove me => debugging
+            #if new_peak < self.smallest_peak[tool_id]:
+                #self.smallest_peak[tool_id] = new_peak
+            #print("new peak, max_available, smallest_peak:", new_peak, tool_availability, self.smallest_peak[tool_id])
 
             # if this move fixed the peak, let's return the extended day list that fixed the problem
             if new_peak <= tool_availability:
                 return tmp_ext_daylist
 
             # if we haven't repaired the problem at this stage, let's try to go deeper
-            deeper_result = self.rec_repair2(next_move_dict, tmp_ext_daylist)
-            if deeper_result is not None:
-                return deeper_result
+            if depth < max_depth:
+                deeper_result = self.rec_repair2(next_move_dict, tmp_ext_daylist, depth+1, max_depth)
+                if deeper_result is not None:
+                    return deeper_result
 
         # at this point, we have exhausted all possibilities and still not found a solution
         return None
@@ -493,7 +517,7 @@ def combine(a, b):
     :return:
     """
 
-    new_candidate = [{} for _ in range(problem_instance['days'])]
+    new_day_list = [{} for _ in range(problem_instance['days'])]
     for (request_id, request) in problem_instance['requests'].items():
         r = random.random()
 
@@ -504,10 +528,11 @@ def combine(a, b):
 
         for day_idx in range(request.first_day, request.last_day + 1):
             if request_id in chosen_candidate.day_list[day_idx]:
-                new_candidate[day_idx][request_id] = 'deliver'
-                new_candidate[day_idx + request.num_days][request_id] = 'fetch'
+                new_day_list[day_idx]                   [request_id] = 'deliver'
+                new_day_list[day_idx + request.num_days][request_id] = 'fetch'
+                break
 
-    new_candidate = Candidate(new_candidate)
+    new_candidate = Candidate(new_day_list)
     new_candidate.repair2()  # repair the candidate
     return new_candidate
 
