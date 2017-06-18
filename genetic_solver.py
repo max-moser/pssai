@@ -67,7 +67,6 @@ class Candidate:
         for (idx, req_dict) in enumerate(day_list):
 
             # for each day, walk through every request on that day
-            sumchange = 0
             for (req_id, req_state) in req_dict.items():
 
                 # calculate the variables that we need
@@ -82,7 +81,6 @@ class Candidate:
                     delivery_amount = request.num_tools
                 else:
                     fetch_amount = request.num_tools
-                sumchange += delivery_amount - fetch_amount
                 # assuming that we are lucky, we can fetch tools and directly deliver them to another customer
                 usage[tool_id][idx] += (delivery_amount - fetch_amount)
 
@@ -227,7 +225,7 @@ class Candidate:
 
     def repair(self):
         usages = self.get_tool_usages()
-        print(usages)
+        print("\nusages:", usages)
 
         # create an extended datastructure from day_list, with all the tools currently at the customer's place
         extended_daylist = self.get_extended_daylist()
@@ -386,18 +384,23 @@ def combine(a, b):
     :return:
     """
 
-    # TODO recombination has to be smart (check if some requests are now duplicated or missing,
-    # TODO or the start/end day requirement is violated
-    # TODO dunno if this kind of recombination is still smart, or if there would be some better way
-    combined_content = ''
-    for idx in range(0, 10):
+    new_candidate = [{} for _ in range(problem_instance['days'])]
+    for (request_id, request) in problem_instance['requests'].items():
         r = random.random()
-        if r < 0.5:
-            combined_content += a.content[idx]
-        else:
-            combined_content += b.content[idx]
 
-    return Candidate(combined_content)
+        if r < 0.5: # use the startday and endday from candidate a
+            chosen_candidate = a
+        else: # use the startday and endday from candidate b
+            chosen_candidate = b
+
+        for day_idx in range(request.first_day, request.last_day + 1):
+            if request_id in chosen_candidate.day_list[day_idx]:
+                new_candidate[day_idx]                   [request_id] = 'deliver'
+                new_candidate[day_idx + request.num_days][request_id] = 'fetch'
+
+    new_candidate = Candidate(new_candidate)
+    new_candidate.repair() # repair the candidate
+    return new_candidate
 
 
 def find_mating_pair(values, scale, blocked_values=None):
@@ -475,7 +478,12 @@ def solve_problem(problem):
     #debug_print([str(p) for p in population])
     #[print(str(p) + '\n') for p in population[0].day_list]
 
-    '''for i in range(0, 30000):
+    #new_candidate = combine(population[0], population[1])
+    #print(population[0])
+    #print("\n", population[1])
+    #print("\n", new_candidate)
+
+    '''for i in range(0, PARAMETERS['number_of_generations']):
         debug_print ('\nIteration: =====' + str(i) + '=======')
         sum_fitness_values = functools.reduce(operator.add, [p.fit for p in population], 0)
         # debug_print(sum_fitness_values)
@@ -504,8 +512,8 @@ def solve_problem(problem):
         population = sorted(population, key=lambda p: p.fit)[-population_size:]
         debug_print('Population after mutation: ' + str([str(p) for p in population]))
         debug_print('Best: ' + str(population[-1:][0]))
-        debug_print('Worst: ' + str(population[0]))
-'''
+        debug_print('Worst: ' + str(population[0]))'''
+
 
     end = datetime.datetime.now()
     print('Done: ' + end.isoformat())
