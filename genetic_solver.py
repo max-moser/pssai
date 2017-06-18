@@ -48,10 +48,12 @@ class Candidate:
         # usage:
         # Key:   TOOL ID
         # Value: List of length = len(day_list),
-        #         each index denotes how many tools are required at that day
+        #         each index has a dictionary with two entries: min and max
+        #         min denotes how many tools are minimally required at that day -
+        #         by fetching tools and delivering them on the same day
         usage = {}
         for tool_id in problem_instance['tools'].keys():
-            usage[tool_id] = [0 for _ in day_list]
+            usage[tool_id] = [{'min': 0, 'max': 0} for _ in day_list]
 
         # walk through every day
         for (idx, req_dict) in enumerate(day_list):
@@ -71,13 +73,17 @@ class Candidate:
                     delivery_amount = request.num_tools
                 else:
                     fetch_amount = request.num_tools
-                # assuming that we are lucky, we can fetch tools and directly deliver them to another customer
-                usage[tool_id][idx] += (delivery_amount - fetch_amount)
+
+                # min = assuming that we are lucky, we can fetch tools and directly deliver them to another customer
+                usage[tool_id][idx]['min'] += (delivery_amount - fetch_amount)
+                usage[tool_id][idx]['max'] += delivery_amount
 
             # don't forget to take those tools into account which are still at a customer's place
             for tool_id in problem_instance['tools'].keys():
                 if idx > 0:
-                    usage[tool_id][idx] += usage[tool_id][idx - 1]
+                    usage[tool_id][idx]['min'] += usage[tool_id][idx - 1]['min']
+                    # add min in both cases (because on the next day, all the tools we fetched are at the depot!)
+                    usage[tool_id][idx]['max'] += usage[tool_id][idx - 1]['min']
 
         return usage
 
@@ -87,27 +93,9 @@ class Candidate:
         sum_distance = 0
         tsp_per_day = []
 
-        tools_in_out = [{} for _ in range(problem_instance['days'])]
-        optimistic_max = {}
-
-        for (day_index, requests_on_day) in enumerate(self.day_list):
-            cars = []
-
-            # initialise the deliver/fetch tuple
-            for tool_key in problem_instance['tools'].keys():
-                tools_in_out[day_index].update({tool_key: InOut(0, 0)})
-                optimistic_max[tool_key] = 0
-
-            # calculate the deliver/fetch tuple for each day
-            for (req_id, req_status) in requests_on_day.items():
-                tool_request = problem_instance['requests'][req_id]
-                tool_id = tool_request.tool_id
-                in_out = tools_in_out[day_index][tool_id]
-
-                if req_status == 'fetch':
-                    in_out.add_in(tool_request.num_tools)
-                else:
-                    in_out.add_out(tool_request.num_tools)
+        # first, get the 1) optimistic minimum of tools needed per day and 2) the maximum of tools needed per day
+        # TODO get usage bois
+        cars = []
 
         for (day_index, requests_on_day) in enumerate(self.day_list):
             pass
@@ -169,12 +157,7 @@ class Candidate:
 
             while True: # find a new start day
                 new_start_day = random.randrange(first_day, last_day + 1)
-                old_start_day = -1
-
-                for day_idx in range(first_day, last_day + 1):
-                    if request_id in self.day_list[day_idx]:
-                        old_start_day = day_idx
-                        break
+                old_start_day = self.find_start_day_of_request(request_id, first_day, last_day)
 
                 print("new start day vs old start day:", new_start_day, old_start_day)
 
@@ -186,6 +169,14 @@ class Candidate:
                     break
 
         print(self.day_list)
+
+
+    def find_start_day_of_request(self, request_id, first_day, last_day):
+        for day_idx in range(first_day, last_day + 1):
+            if request_id in self.day_list:
+                return day_idx
+
+        return -1
 
 
     def get_extended_daylist(self):
@@ -207,6 +198,8 @@ class Candidate:
 
         return new_daylist
 
+
+    # TODO REMOVE ME!
     def repair(self):
         usages = self.get_tool_usages()
         print("\nusages:", usages)
@@ -283,13 +276,8 @@ class Candidate:
                 usages = self.get_tool_usages()
                 largest_peak_day, largest_peak = max(enumerate(usages[tool_id]), key=lambda p: p[1])
 
-    def find_start_day_of_request(self, request_id, first_day, last_day):
-        for day_idx in range(first_day, last_day + 1):
-            if request_id in self.day_list:
-                return day_idx
 
-        return -1
-
+    # TODO REMOVE ME
     def persist_successful_move(self, first_day, last_day, extended_daylist, req_id, possible_start_day,
                                 request_length):
         # change self.day_list and extended_daylist
@@ -324,11 +312,11 @@ class Candidate:
 
         for (tool_id, usages_per_day) in usages.items():
             indexed_usages_per_day = enumerate(usages_per_day)
-            (day_idx, peak_amount) = max(indexed_usages_per_day, key=lambda x: x[1])
+            (day_idx, peak_amount) = max(indexed_usages_per_day, key=lambda x: x[1]['min'])
             tool_availability = problem_instance["tools"][tool_id].num_available
 
             # if the peak does not exceed the availability of the tool, we can ignore it :)
-            if peak_amount <= tool_availability:
+            if peak_amount['min'] <= tool_availability:
                 continue
 
             # possibly involved requests:
