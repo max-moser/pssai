@@ -1,7 +1,8 @@
 import random
 import datetime
 
-PARAMETERS = {'population_size': 100, 'survivor_size': 5, 'mutation_possibility': 0.0015, 'number_of_generations': 30000}
+PARAMETERS = {'population_size': 100, 'survivor_size': 5, 'mutation_possibility': 0.0015,
+              'number_of_generations': 30000}
 problem_instance = None
 dbg = True
 
@@ -78,43 +79,6 @@ class Candidate:
                     usage[tool_id][idx] += usage[tool_id][idx - 1]
 
         return usage
-
-    # TODO REMOVE ME?
-    def get_problems_for_tool(self, tool_id):
-        """Calculate a list of problems for the tool_id
-
-        :param tool_id:
-        :return:
-        """
-        usages = self.get_tool_usages()[tool_id]
-        available = problem_instance['tools'][tool_id].num_available
-        problems = []
-
-        for (day, usage) in enumerate(usages):
-            involved_requests = []
-            uses = usage
-
-            for request in problem_instance['requests']:
-                if request.first_day <= day <= request.last_day:
-                    involved_requests.append(request)
-
-            if usage > available:
-                problems.append((day, uses, available, involved_requests))
-
-        return problems
-
-    # TODO REMOVE ME?
-    def is_valid(self):
-        usages = self.get_tool_usages()
-
-        for tool_id in problem_instance['tools'].keys():
-            available = problem_instance['tools'][tool_id].num_available
-
-            for usage in usages[tool_id]:
-                if usage > available:
-                    return False
-
-        return True
 
     def fitness_heuristic(self):
         max_cars = 0
@@ -361,8 +325,15 @@ class Candidate:
                 print("WE ARE SORRY BUT YOUR PROBLEM CANNOT GET FIXED.")
             else:
                 print("WE FIXED YOUR PROBLEM FOR YOU MATE")
-                # TODO remove the "running" elements from the repair_result (extended day list)
-                # TODO and set the
+                # to create a "normal" day-list from the extended day-list,
+                # we only need to delete the "running" entries from the latter
+                for requests_per_day in repair_result:
+                    for (req, state) in requests_per_day.items():
+                        if state == "running":
+                            requests_per_day.pop(req, None)
+
+                # make the result stick
+                self.day_list = repair_result
                 pass
 
     def rec_repair2(self, move_dict, current_extended_daylist):
@@ -407,11 +378,11 @@ class Candidate:
                 req_dict.pop(chosen_request.id, None)
 
                 if start_day == day_idx:
-                    tmp_ext_daylist[chosen_request.id] = "deliver"
+                    tmp_ext_daylist[day_idx][chosen_request.id] = "deliver"
                 elif end_day == day_idx:
-                    tmp_ext_daylist[chosen_request.id] = "fetch"
+                    tmp_ext_daylist[day_idx][chosen_request.id] = "fetch"
                 elif start_day <= day_idx <= end_day:
-                    tmp_ext_daylist[chosen_request.id] = "running"
+                    tmp_ext_daylist[day_idx][chosen_request.id] = "running"
 
             tmp_usages = tool_usages_from_extended_daylist(tmp_ext_daylist)[tool_id]
             new_peak = max(tmp_usages)
@@ -508,7 +479,7 @@ def initial_population(population_size):
 
         candidate = Candidate(day_list)
         # print(candidate.get_tool_usages())
-        candidate.repair()
+        candidate.repair2()
         # print(candidate.get_extended_daylist())
         population.append(candidate)
     return population
@@ -526,18 +497,18 @@ def combine(a, b):
     for (request_id, request) in problem_instance['requests'].items():
         r = random.random()
 
-        if r < 0.5: # use the startday and endday from candidate a
+        if r < 0.5:  # use the startday and endday from candidate a
             chosen_candidate = a
-        else: # use the startday and endday from candidate b
+        else:  # use the startday and endday from candidate b
             chosen_candidate = b
 
         for day_idx in range(request.first_day, request.last_day + 1):
             if request_id in chosen_candidate.day_list[day_idx]:
-                new_candidate[day_idx]                   [request_id] = 'deliver'
+                new_candidate[day_idx][request_id] = 'deliver'
                 new_candidate[day_idx + request.num_days][request_id] = 'fetch'
 
     new_candidate = Candidate(new_candidate)
-    new_candidate.repair() # repair the candidate
+    new_candidate.repair2()  # repair the candidate
     return new_candidate
 
 
@@ -616,13 +587,13 @@ def solve_problem(problem):
     # debug_print([str(p) for p in population])
     # [print(str(p) + '\n') for p in population[0].day_list]
 
-    #new_candidate = combine(population[0], population[1])
-    #print(population[0])
-    #print("\n", population[1])
-    #print("\n", new_candidate)
+    # new_candidate = combine(population[0], population[1])
+    # print(population[0])
+    # print("\n", population[1])
+    # print("\n", new_candidate)
 
-    for i in range(1):# TODO range(0, PARAMETERS['number_of_generations']):
-        debug_print ('\nIteration: =====' + str(i) + '=======')
+    for i in range(1):  # TODO range(0, PARAMETERS['number_of_generations']):
+        debug_print('\nIteration: =====' + str(i) + '=======')
         sum_fitness_values = sum(p.fit for p in population)
         debug_print(sum_fitness_values)
 
@@ -639,22 +610,22 @@ def solve_problem(problem):
             # mutate (happens randomly)
             new_candidate.mutate()
 
-            if new_candidate in population: # TODO can this still happen often enough?
+            if new_candidate in population:  # TODO can this still happen often enough?
                 debug_print('WHAT IS HAPPENING')
                 i -= 1
                 continue
 
-            #debug_print('1: ', str(one))
-            #debug_print('2: ', str(two))
-            #debug_print('Combined: ', new_candidate)
+            # debug_print('1: ', str(one))
+            # debug_print('2: ', str(two))
+            # debug_print('Combined: ', new_candidate)
             new_population.append(new_candidate)
 
         # select survivors (the best ones survive)
         population = sorted(population, key=lambda p: p.fit)[-PARAMETERS['survivor_size']:]
         new_population.append(population)
 
-        #debug_print('Population after mutation: ' + str([str(p) for p in population]))
-        debug_print('Best: '  + str(population[-1:][0]))
+        # debug_print('Population after mutation: ' + str([str(p) for p in population]))
+        debug_print('Best: ' + str(population[-1:][0]))
         debug_print('Worst: ' + str(population[0]))
 
     end = datetime.datetime.now()
