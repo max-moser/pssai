@@ -145,16 +145,48 @@ class Candidate:
         #        sum_tool_costs
 
     def mutate(self):
-        """Perform random mutations on Candidate a
+        """Perform a random mutation
 
         :return:
         """
 
         r = random.random()
-
+        print("mutate")
+        print(self.day_list)
         if r < PARAMETERS['mutation_possibility']:
-            # TODO
-            return
+            # TODO mutate only one request?
+
+            while True: # find a request to mutate where first start day != last start day
+                request_id = random.randrange(1, len(problem_instance['requests']) + 1)
+                first_day = problem_instance['requests'][request_id].first_day
+                last_day  = problem_instance['requests'][request_id].last_day
+                num_days  = problem_instance['requests'][request_id].num_days
+
+                if first_day != last_day:
+                    break
+
+            print("request to mutate:", request_id)
+
+            while True: # find a new start day
+                new_start_day = random.randrange(first_day, last_day + 1)
+                old_start_day = -1
+
+                for day_idx in range(first_day, last_day + 1):
+                    if request_id in self.day_list[day_idx]:
+                        old_start_day = day_idx
+                        break
+
+                print("new start day vs old start day:", new_start_day, old_start_day)
+
+                if new_start_day != old_start_day: # change the startday and endday of the request
+                    self.day_list[new_start_day]           [request_id] = 'deliver'
+                    self.day_list[new_start_day + num_days][request_id] = 'fetch'
+                    self.day_list[old_start_day]           .pop(request_id, None)
+                    self.day_list[old_start_day + num_days].pop(request_id, None)
+                    break
+
+        print(self.day_list)
+
 
     def get_extended_daylist(self):
         """
