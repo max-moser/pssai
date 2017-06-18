@@ -2,7 +2,7 @@ import random
 import datetime
 
 PARAMETERS = {'population_size': 100, 'survivor_size': 5, 'mutation_possibility': 0.0015,
-              'number_of_generations': 30000, 'max_depth_start': 2, 'max_depth_increase': 3, 'max_depth': 17}
+              'number_of_generations': 30000, 'max_depth_start': 2, 'max_depth_increase': 3, 'max_depth': 14}
 problem_instance = None
 dbg = True
 
@@ -31,6 +31,7 @@ class Candidate:
     def __init__(self, day_list, fitness_=None):
         # ctor
         self.day_list = day_list
+        self.valid = True  # gets set in repair()
         if fitness_ is not None:
             self.fit = fitness_
         else:
@@ -333,9 +334,11 @@ class Candidate:
                         continue
                     else:
                         print("WE ARE SORRY BUT YOUR PROBLEM CANNOT GET FIXED.")
+                        self.valid = False
                         return
                 else:
                     print("WE FIXED YOUR PROBLEM FOR YOU MATE")
+                    self.valid = True
                     # to create a "normal" day-list from the extended day-list,
                     # we only need to delete the "running" entries from the latter
 
@@ -345,8 +348,7 @@ class Candidate:
 
                     # make the result stick
                     self.day_list = new_day_list
-                    return
-
+                    break
 
 
     def rec_repair2(self, move_dict, current_extended_daylist, depth, max_depth):
@@ -492,7 +494,8 @@ def initial_population(population_size):
 
     # for each request, pick a random starting day and the corresponding end day
     population = []
-    for i in range(0, population_size):
+    i = 0
+    while i < population_size:
         day_list = [{} for _ in range(problem_instance['days'])]
 
         for key, request in problem_instance['requests'].items():
@@ -504,8 +507,11 @@ def initial_population(population_size):
         candidate = Candidate(day_list)
         # print(candidate.get_tool_usages())
         candidate.repair2()
+        if not candidate.valid:  # we need to create an additional candidate
+            continue
         # print(candidate.get_extended_daylist())
         population.append(candidate)
+        i += 1
     return population
 
 
@@ -608,7 +614,7 @@ def solve_problem(problem):
     # create initial population
     population = initial_population(PARAMETERS['population_size'])
     population = sorted(population, key=lambda p: p.fit)
-    population_size = len(population)
+    debug_print("population size:", len(population))
     # debug_print([str(p) for p in population])
     # [print(str(p) + '\n') for p in population[0].day_list]
 
@@ -627,27 +633,41 @@ def solve_problem(problem):
 
         # create new population through crossover
         new_population = []
-        for i in range(PARAMETERS['population_size'] - PARAMETERS['survivor_size']):
+        i = 0
+        while i < PARAMETERS['population_size'] - PARAMETERS['survivor_size']:
 
             # select crossover candidates (candidates with higher fitness have a higher chance to get reproduced)
             (one, two) = find_mating_pair(fitness_range, sum_fitness_values)
             new_candidate = combine(one, two)
+
+            if not new_candidate.valid:  # we need to generate an additional candidate
+                continue
+
             # mutate (happens randomly)
             new_candidate.mutate()
 
-            if new_candidate in population:  # TODO can this still happen often enough?
+            # TODO can this still happen often enough?
+            if new_candidate in population:  # we need to generate an additional candidate
                 debug_print('WHAT IS HAPPENING')
-                i -= 1
                 continue
 
             # debug_print('1: ', str(one))
             # debug_print('2: ', str(two))
             # debug_print('Combined: ', new_candidate)
             new_population.append(new_candidate)
+            i += 1
 
+        debug_print("new_population size b4 insert pop size:", len(new_population))
         # select survivors (the best ones survive)
-        population = sorted(population, key=lambda p: p.fit)[-PARAMETERS['survivor_size']:]
-        new_population.append(population)
+
+        population = sorted(population, key=lambda p: p.fit)
+        population = population[-PARAMETERS['survivor_size']:]
+        debug_print("population size to insert:", len(population))
+
+        new_population.extend(population)
+
+
+        debug_print("new_population size:", len(new_population))
 
         # debug_print('Population after mutation: ' + str([str(p) for p in population]))
         debug_print('Best: ' + str(population[-1:][0]))
