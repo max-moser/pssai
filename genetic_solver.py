@@ -12,6 +12,63 @@ def debug_print(*args, **kwargs):
         print(*args, **kwargs)
 
 
+class StopOver:
+    def __init__(self, customer_id, request_id, num_tools):
+        self.customer_id = customer_id
+        self.request_id = request_id
+        self.num_tools = num_tools  # negative num_tools = fetch request, positive num_tools = deliver request
+
+
+class Trip:
+    def __init__(self, used_capacity=0):
+        self.previous_trips_distance = used_capacity  # distance from past trips of the same car
+        self.trip_distance_wo_last_stop = 0  # distance of this trip without the distance to the depot at the end
+        self.stopovers = [StopOver(0, 0, 0)]  # list of requests the trip contains (0 = depot)
+        self.used_tools_per_stop = {tool_id: [0] for (tool_id, tool) in problem_instance['tools'].items()}
+
+    def try_add(self, stopover):
+
+        # 1. sum up the distance with the additional stopover
+        distance_to_stopover = problem_instance['distance_matrix'][self.stopovers[-1].customer_id][stopover.customer_id]
+        distance_to_depot    = problem_instance['distance_matrix'][stopover.customer_id]          [0]
+        sum_distances = self.previous_trips_distance + self.trip_distance_wo_last_stop + distance_to_stopover + distance_to_depot
+
+        # check if the distance is ok
+        if sum_distances > problem_instance['max_trip_distance']:
+            return False
+
+        # 2. sum up all the used tools and check if the distance is ok
+        # if the new request is a fetch request, we only have to look at the changes of today
+        if stopover.num_tools < 0:
+            sum_load = abs(stopover.num_tools)
+            for (tool_id, usages) in self.used_tools_per_stop.items():
+                sum_load += usages[-1].num_tools
+            if sum_load > problem_instance['capacity']:
+                return False
+
+        # if the new request is a deliver request, we have to look at all the past days
+        else:
+            for (tool_id, usages) in self.used_tools_per_stop.items():
+                sum_load = stopover.num_tools
+                for stopover_idx in range(len(self.stopovers)):
+                    sum_load += usages[stopover_idx].num_tools
+                if sum_load > problem_instance['capacity']:
+                    return False
+
+        # 3. if we get here, we can add the new stop, and update the trip distance and the used tools
+        self.stopovers.append(stopover)
+        self.trip_distance_wo_last_stop += distance_to_stopover
+
+        request_tool_id = problem_instance['requests'][stopover.request_id].tool_id
+        if stopover.num_tools < 0:
+            self.used_tools_per_stop[request_tool_id][-1] += abs(stopover.num_tools)
+        else:
+            for stopover_idx in range(len(self.stopovers)):
+                self.used_tools_per_stop[request_tool_id] += stopover.num_tools
+
+        return True
+
+
 class InOut:
     def __init__(self, in_=0, out_=0):
         self.in_ = in_
