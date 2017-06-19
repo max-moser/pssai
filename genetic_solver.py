@@ -12,6 +12,13 @@ def debug_print(*args, **kwargs):
         print(*args, **kwargs)
 
 
+class StopOver:
+    def __init__(self, customer_id, request_id, num_tools):
+        self.customer_id = customer_id
+        self.request_id = request_id
+        self.num_tools = num_tools
+
+
 class InOut:
     def __init__(self, in_=0, out_=0):
         self.in_ = in_
@@ -120,44 +127,113 @@ class Candidate:
                                  usages[critical_tool_id][day_index]['min']
 
                 # filter requests which contain a critical tool with this id
-                critical_requests_deliver = {req_id: req_status for req_id, req_status in requests_on_day.items()
+                critical_requests_deliver = [req_id for req_id, req_status in requests_on_day.items()
                                            if (problem_instance['requests'][req_id].tool_id == critical_tool_id) and
-                                           (req_status == 'deliver')}
+                                           (req_status == 'deliver')]
 
-                critical_requests_fetch = {req_id: req_status for req_id, req_status in requests_on_day.items()
+                critical_requests_fetch   = [req_id for req_id, req_status in requests_on_day.items()
                                            if (problem_instance['requests'][req_id].tool_id == critical_tool_id) and
-                                           (req_status == 'fetch')}
+                                           (req_status == 'fetch')]
 
                 route = [] # TODO route for the current car
-                while len(critical_requests_deliver) + len(critical_requests_fetch) > 0:
-                    # constraints:
-                    # 1. sum distance per car < max distance
-                    # 2. -sum(fetch) + sum(deliver) = additional tools
-                    #    this means for diff_deliver_fetch > 0, we load tools when leaving the depot, and return WITHOUT tools
-                    #    and for diff_deliver_fetch < 0, we do NOT load tools when leaving the depot, but return with tools
+                # while len(critical_requests_deliver) + len(critical_requests_fetch) > 0:
+                # constraints:
+                # 1. sum distance per car < max distance
+                # 2. -sum(fetch) + sum(deliver) = additional tools
+                #    this means for diff_deliver_fetch > 0, we load tools when leaving the depot, and return WITHOUT tools
+                #    and for diff_deliver_fetch < 0, we do NOT load tools when leaving the depot, but return with tools
 
-                    # we need to fetch first, then deliver
-                    for (req_id_deliver, req_status_deliver) in critical_requests_deliver.items():
-                        route.append(0) # visit the depot first
+                # we need to fetch first, then deliver
 
-                        req_deliver_customer_id = problem_instance['requests'][req_id_deliver].customer_id
-                        req_deliver_num_tools   = problem_instance['requests'][req_id_deliver].num_tools
+                # order critical requests by amount
+                critical_request_deliver_sorted = sorted(critical_requests_deliver,
+                                                         key=lambda x: problem_instance['requests'][x].num_tools)
 
-                        # sort the fetch-requests by distance to the deliver request (result = list of tuples (req_id, status))
-                        critical_requests_fetch_sorted = sorted(critical_requests_fetch.items(),
-                            key=lambda x: problem_instance['distance_matrix']
-                                [req_deliver_customer_id] [problem_instance['requests'][x[0]].customer_id])
+                # set request at the end of the route
+                for req_deliver_id in critical_request_deliver_sorted:
 
-                        critical_request_deliver_sorted = sorted(critical_requests_deliver.items(),
-                            key=lambda x: problem_instance['distance_matrix']
-                                [req_deliver_customer_id] [problem_instance['requests'][x[0]].customer_id])
+                    req_deliver_customer_id = problem_instance['requests'][req_deliver_id].customer_id
+                    req_deliver_num_tools   = problem_instance['requests'][req_deliver_id].num_tools
+                    start_at_depot = StopOver(0, 0, 0)
+                    route.append(start_at_depot) # visit the depot first
 
+                    distances = {}
+                    deltas = {}
+                    for req_id in critical_requests_fetch:
+                        dist = problem_instance["distance_matrix"][req_deliver_id][req_id]
+                        delta = abs(problem_instance["requests"][req_id].num_tools
+                                    - req_deliver_num_tools )
 
-                        # TODO 1. find a request
-                        #      2. find fitting fetches
-                        #      3. return to depot
-                        #      4. repeat (add to new car if old car cannot travel further)
-                        # now find a or many fitting fetch-requests to get the tools first
+                        distances[req_id] = dist
+                        deltas[req_id] = delta
+
+                    min_dist  = min(distances.items(), key=lambda x: x[1])[1]
+                    max_dist  = max(distances.items(), key=lambda x: x[1])[1]
+                    min_delta = min(deltas.items(),    key=lambda x: x[1])[1]
+                    max_delta = max(deltas.items(),    key=lambda x: x[1])[1]
+
+                    # try to fill the route with other requests before the deliver request
+                    # a request fits if the delta between the num_tools is low and the distance is low
+                    sorted_requests = {}
+                    for req_fetch_id in critical_requests_fetch:
+                        req_fetch_distance = problem_instance['distance_matrix'][req_deliver_id][req_fetch_id]
+                        req_fetch_delta = problem_instance['requests'][req_fetch_id].num_tools
+
+                        score_distance = translate(req_fetch_distance, min_dist, max_dist, 1, 4)
+                        score_delta = translate(req_fetch_delta, min_delta, max_delta, 1, 10) # minimizing the delta is more important to us
+                        score = score_distance * score_delta
+                        sorted_requests[req_fetch_id] = score
+
+                    counter = 0
+                    # add requests to the list (to keep this simple, all fetch req. are before deliver req.)
+                    for (fetch_req_id, fetch_req_score) in sorted_requests.items():
+
+                        # check if the distance is shorter than the max distance per car
+                        fetch_customer_id = problem_instance['requests'][fetch_req_id].customer_id
+                        fetch_num_tools   = problem_instance['requests'][fetch_req_id].num_tools
+
+                        tmp_route = route.copy()
+
+                        # add the (CUSTOMER_ID, REQUEST_ID) tuples to the tmp route
+                        if counter > 0:
+                            # pretty stupid fix
+                            # but otherwise we would append the delivery and depot each time
+                            # that we append a new fetch
+                            tmp_route.pop()
+                            tmp_route.pop()
+
+                        tmp_route.append(StopOver(fetch_customer_id, fetch_req_id, fetch_num_tools))
+                        tmp_route.append(StopOver(req_deliver_customer_id, req_deliver_id, req_deliver_num_tools))
+                        tmp_route.append(StopOver(0, 0, 0))
+
+                        counter += 1
+                        successful_move = is_route_valid(tmp_route)
+                        if successful_move:
+                            # we used this fetch request up and cannot re-use it in
+                            # further delivery requests
+                            critical_requests_fetch.remove(fetch_req_id)
+                            route = tmp_route
+
+                            # if we found some route that fetches more than delivers,
+                            # we're just gonna stop building up this route
+                            if tmp_route[-1][1] >= 0:
+                                break
+
+                    if counter <= 0:
+                        # if there weren't any fetch requests left, we're just gonna
+                        # try to deliver and return to depot
+                        route = route.copy()
+                        route.append(StopOver(req_deliver_customer_id, req_deliver_id, req_deliver_num_tools))
+                        route.append(StopOver(0, 0, 0))
+                        # TODO persist the tmp route
+
+                    is_route_valid(route)
+
+                    if critical_requests_fetch:
+                        pass
+                        # TODO there are still some fetches left
+                        #      so we have to do something with them
+
 
 
             # 3. loop over remaining (non critical) requests, use NN heuristic
@@ -508,6 +584,58 @@ class Candidate:
 
         # at this point, we have exhausted all possibilities and still not found a solution
         return None
+
+
+def translate(value, leftMin, leftMax, rightMin, rightMax):
+    # Figure out how 'wide' each range is
+    leftSpan = leftMax - leftMin
+    rightSpan = rightMax - rightMin
+
+    # Convert the left range into a 0-1 range (float)
+    valueScaled = float(value - leftMin) / float(leftSpan)
+
+    # Convert the 0-1 range into a value in the right range.
+    return rightMin + (valueScaled * rightSpan)
+
+
+def is_route_valid(tmp_route):
+    sum_distance = 0
+    loaded = 0
+    max_load = 0
+    for (idx, stopover) in enumerate(tmp_route):
+        customer_id   = stopover.customer_id
+        request_id    = stopover.request_id
+        change_amount = stopover.num_tools
+
+        if idx == 0:
+            continue
+
+        last_customer_id = tmp_route[idx-1].customer_id
+        sum_distance += problem_instance['distance_matrix'][last_customer_id][customer_id]
+
+        loaded += change_amount
+
+        if loaded > problem_instance["capacity"]:
+            return False
+        elif sum_distance > problem_instance["max_trip_distance"]:
+            return False
+
+        max_load = max(max_load, loaded)
+
+    if loaded < 0:
+        depot_load = abs(loaded)
+
+        # if we need to fetch something at the depot already,
+        # we have to take into account that we are
+        if (max_load + depot_load) > problem_instance["capacity"]:
+            return False
+
+        tmp_route[0].num_tools = depot_load
+
+    elif loaded > 0:
+        tmp_route[-1].num_tools = -loaded
+
+    return True
 
 
 def tool_usages_from_extended_daylist(ext_day_list):
