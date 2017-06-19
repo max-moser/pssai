@@ -94,11 +94,75 @@ class Candidate:
         tsp_per_day = []
 
         # first, get the 1) optimistic minimum of tools needed per day and 2) the maximum of tools needed per day
-        # TODO get usage bois
         cars = []
+        usages = self.get_tool_usages()
+
+        # TODO check if we can use NN heuristic
+        #       we can only use NN if FOR ALL TOOLS on this day this holds: (usages[tool][day][max] <= num_tools)
+        #       otherwise we must make sure to fetch the tools before delivering them to not exceed the limit
 
         for (day_index, requests_on_day) in enumerate(self.day_list):
-            pass
+
+            # 1. find critical tools
+            critical_tools = []
+            for (tool_id, tool) in problem_instance['tools'].items():
+                if usages[tool_id][day_index]['max'] > tool.num_tools:
+                    critical_tools.append(tool_id)
+
+            # 2. loop over critical tools, make tsp for critical requests
+            for critical_tool_id in critical_tools:
+                # how many additional tools compared to the previous day are available?
+                diff_deliver_fetch = usages[critical_tool_id][day_index]['min'] if day_index == 0 else \
+                    usages[critical_tool_id][day_index]['min'] - usages[critical_tool_id][day_index - 1]['min']
+
+                # how much wiggle room do we have for this day?
+                wiggle_room = problem_instance['tools'][critical_tool_id].num_tools - \
+                                 usages[critical_tool_id][day_index]['min']
+
+                # filter requests which contain a critical tool with this id
+                critical_requests_deliver = {req_id: req_status for req_id, req_status in requests_on_day.items()
+                                           if (problem_instance['requests'][req_id].tool_id == critical_tool_id) and
+                                           (req_status == 'deliver')}
+
+                critical_requests_fetch = {req_id: req_status for req_id, req_status in requests_on_day.items()
+                                           if (problem_instance['requests'][req_id].tool_id == critical_tool_id) and
+                                           (req_status == 'fetch')}
+
+                route = [] # TODO route for the current car
+                while len(critical_requests_deliver) + len(critical_requests_fetch) > 0:
+                    # constraints:
+                    # 1. sum distance per car < max distance
+                    # 2. -sum(fetch) + sum(deliver) = additional tools
+                    #    this means for diff_deliver_fetch > 0, we load tools when leaving the depot, and return WITHOUT tools
+                    #    and for diff_deliver_fetch < 0, we do NOT load tools when leaving the depot, but return with tools
+
+                    # we need to fetch first, then deliver
+                    for (req_id_deliver, req_status_deliver) in critical_requests_deliver.items():
+                        route.append(0) # visit the depot first
+
+                        req_deliver_customer_id = problem_instance['requests'][req_id_deliver].customer_id
+                        req_deliver_num_tools   = problem_instance['requests'][req_id_deliver].num_tools
+
+                        # sort the fetch-requests by distance to the deliver request (result = list of tuples (req_id, status))
+                        critical_requests_fetch_sorted = sorted(critical_requests_fetch.items(),
+                            key=lambda x: problem_instance['distance_matrix']
+                                [req_deliver_customer_id] [problem_instance['requests'][x[0]].customer_id])
+
+                        critical_request_deliver_sorted = sorted(critical_requests_deliver.items(),
+                            key=lambda x: problem_instance['distance_matrix']
+                                [req_deliver_customer_id] [problem_instance['requests'][x[0]].customer_id])
+
+
+                        # TODO 1. find a request
+                        #      2. find fitting fetches
+                        #      3. return to depot
+                        #      4. repeat (add to new car if old car cannot travel further)
+                        # now find a or many fitting fetch-requests to get the tools first
+
+
+            # 3. loop over remaining (non critical) requests, use NN heuristic
+
+
             for (req_id, req_status) in requests_on_day.items():
                 request = problem_instance['requests'][req_id]
 
