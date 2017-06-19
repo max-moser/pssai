@@ -16,7 +16,68 @@ class StopOver:
     def __init__(self, customer_id, request_id, num_tools):
         self.customer_id = customer_id
         self.request_id = request_id
-        self.num_tools = num_tools
+        self.num_tools = num_tools  # negative num_tools = fetch request, positive num_tools = deliver request
+
+
+class Trip:
+    def __init__(self, used_capacity=0):
+        self.previous_trips_distance = used_capacity  # distance from past trips of the same car
+        self.trip_distance_wo_last_stop = 0  # distance of this trip without the distance to the depot at the end
+        self.stopovers = [StopOver(0, 0, 0)]  # list of requests the trip contains (0 = depot)
+        self.used_tools_per_stop = {tool_id: [0] for (tool_id, tool) in problem_instance['tools'].items()}
+
+    def try_add(self, stopover):
+        # 1. sum up the distance with the additional stopover
+        distance_to_stopover = problem_instance['distance_matrix'][self.stopovers[-1].customer_id][stopover.customer_id]
+        distance_to_depot    = problem_instance['distance_matrix'][stopover.customer_id]          [0]
+        sum_distances = self.previous_trips_distance + self.trip_distance_wo_last_stop + distance_to_stopover + distance_to_depot
+
+        # check if the distance is ok
+        if sum_distances > problem_instance['max_trip_distance']:
+            return False
+
+        # 2. sum up all the used tools and check if the distance is ok
+        # if the new request is a fetch request, we only have to look at the changes of today
+        if stopover.num_tools < 0:
+            sum_load = abs(stopover.num_tools)
+            for (tool_id, usages) in self.used_tools_per_stop.items():
+                sum_load += usages[-1].num_tools
+            if sum_load > problem_instance['capacity']:
+                return False
+
+        # if the new request is a deliver request, we have to look at all the past days
+        else:
+            for (tool_id, usages) in self.used_tools_per_stop.items():
+                sum_load = stopover.num_tools
+                for stopover_idx in range(len(self.stopovers)):
+                    sum_load += usages[stopover_idx].num_tools
+                if sum_load > problem_instance['capacity']:
+                    return False
+
+        # 3. if we get here, we can add the new stop, and update the trip distance and the used tools
+        self.stopovers.append(stopover)
+        self.trip_distance_wo_last_stop += distance_to_stopover
+
+        request_tool_id = problem_instance['requests'][stopover.request_id].tool_id
+        if stopover.num_tools < 0:
+            self.used_tools_per_stop[request_tool_id][-1] += abs(stopover.num_tools)
+        else:
+            for stopover_idx in range(len(self.stopovers)):
+                self.used_tools_per_stop[request_tool_id] += stopover.num_tools
+
+        return True
+
+    def finalize(self):
+        # update stopovers (return to the depot)
+        self.stopovers.append(StopOver(0, 0, 0))
+
+        # set complete distance
+        last_stop_customer_id = self.stopovers[-1].customer_id
+        self.distance = problem_instance['distance_matrix'][last_stop_customer_id][0]
+
+        # update tool usages for the last day
+        for (tool_id, usages) in self.used_tools_per_stop.items():
+            usages.append(usages[-1])
 
 
 class InOut:
@@ -113,7 +174,7 @@ class Candidate:
             trips_per_day[day_index] = []
             trips_today = trips_per_day[day_index]
 
-            # 1. find critical tools
+            # 1. find critical tools for this day
             critical_tools = []
             for (tool_id, tool) in problem_instance['tools'].items():
                 if usages[tool_id][day_index]['max'] > tool.num_tools:
@@ -283,7 +344,34 @@ class Candidate:
 
 
             # 3. loop over remaining (non critical) requests, use NN heuristic
+            # 3.1 get all critical requests
+            non_critical_requests = {req_id: req_status for (req_id, req_status) in requests_on_day.items()
+                                        if problem_instance['requests'][req_id].tool_id not in critical_tools}
 
+            trips_today = []
+            current_trip = Trip()
+            # just loop while we still have requests to to
+            while non_critical_requests:
+                # sort them (based on their distance to the last point in the trip)
+                last_stopover_customer_id = current_trip.stopovers[-1].customer_id
+                non_critical_requests_sorted = sorted(non_critical_requests,
+                    key=lambda x: problem_instance['distance_matrix']
+                        [last_stopover_customer_id][problem_instance['requests'][x[0]].customer_id])
+
+                # create a new stopover for the nearest neighbour (a stopover needs customer_id, request_id, num_tools)
+                nn_req_id = non_critical_requests_sorted[0][0]
+                nn_req_status = non_critical_requests_sorted[0][1]
+                nn_customer_id = problem_instance['requests'][nn_req_id].customer_id
+                nn_num_tools = problem_instance['requests'][nn_req_id].num_tools
+                if nn_req_status == 'fetch':
+                    nn_num_tools *= -1
+                nn_stopover = StopOver(nn_customer_id, nn_req_id, nn_num_tools)
+
+                if not current_trip.try_add(nn_stopover):  # trip is full
+                    trips_today.append(current_trip.finalize())  # finalize the trip
+                    current_trip = Trip()  # reset the current_trip
+                    current_trip.try_add(nn_stopover)  # the first stop can never fail, unless our problem instance is faulty
+                    non_critical_requests.pop(nn_req_id, None)  # remove the request from the list of requests yet to assign
 
             for (req_id, req_status) in requests_on_day.items():
                 request = problem_instance['requests'][req_id]
