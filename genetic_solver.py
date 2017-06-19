@@ -103,12 +103,15 @@ class Candidate:
         # first, get the 1) optimistic minimum of tools needed per day and 2) the maximum of tools needed per day
         cars = []
         usages = self.get_tool_usages()
+        trips_per_day = {}
 
         # TODO check if we can use NN heuristic
         #       we can only use NN if FOR ALL TOOLS on this day this holds: (usages[tool][day][max] <= num_tools)
         #       otherwise we must make sure to fetch the tools before delivering them to not exceed the limit
 
         for (day_index, requests_on_day) in enumerate(self.day_list):
+            trips_per_day[day_index] = []
+            trips_today = trips_per_day[day_index]
 
             # 1. find critical tools
             critical_tools = []
@@ -124,7 +127,7 @@ class Candidate:
 
                 # how much wiggle room do we have for this day?
                 wiggle_room = problem_instance['tools'][critical_tool_id].num_tools - \
-                                 usages[critical_tool_id][day_index]['min']
+                              usages[critical_tool_id][day_index]['min']
 
                 # filter requests which contain a critical tool with this id
                 critical_requests_deliver = [req_id for req_id, req_status in requests_on_day.items()
@@ -140,29 +143,46 @@ class Candidate:
                 # constraints:
                 # 1. sum distance per car < max distance
                 # 2. -sum(fetch) + sum(deliver) = additional tools
-                #    this means for diff_deliver_fetch > 0, we load tools when leaving the depot, and return WITHOUT tools
-                #    and for diff_deliver_fetch < 0, we do NOT load tools when leaving the depot, but return with tools
+                #  this means for diff_deliver_fetch > 0, we load tools when leaving the depot, and return WITHOUT tools
+                #  and for diff_deliver_fetch < 0, we do NOT load tools when leaving the depot, but return with tools
 
                 # we need to fetch first, then deliver
 
-                # order critical requests by amount
+                # order critical requests by amount, highest amount first
                 critical_request_deliver_sorted = sorted(critical_requests_deliver,
-                                                         key=lambda x: problem_instance['requests'][x].num_tools)
+                                                         key=lambda x: problem_instance['requests'][x].num_tools,
+                                                         reverse=True)
+
+                already_used_deliveries = []
+                not_yet_used_deliveries = critical_request_deliver_sorted.copy()
 
                 # set request at the end of the route
                 for req_deliver_id in critical_request_deliver_sorted:
 
+                    # this should not occur unless we added more delivery requests
+                    # to the last trip (see below)
+                    if req_deliver_id in already_used_deliveries:
+                        continue
+                    already_used_deliveries.append(req_deliver_id)
+                    not_yet_used_deliveries.remove(req_deliver_id)
+
                     req_deliver_customer_id = problem_instance['requests'][req_deliver_id].customer_id
                     req_deliver_num_tools   = problem_instance['requests'][req_deliver_id].num_tools
-                    start_at_depot = StopOver(0, 0, 0)
-                    route.append(start_at_depot) # visit the depot first
 
+                    # we start at the depot
+                    start_at_depot = StopOver(0, 0, 0)
+                    route.append(start_at_depot)
+
+                    # calculate the metric, based on which we determine the fetch request to pick next
+                    # metric = scaled DISTANCE x scaled DELTA
+                    # where by distance we mean distance from current delivery request to the delivery request
+                    #          delta: the amount of tools we fetch - tools we deliver
                     distances = {}
                     deltas = {}
                     for req_id in critical_requests_fetch:
                         dist = problem_instance["distance_matrix"][req_deliver_id][req_id]
                         delta = abs(problem_instance["requests"][req_id].num_tools
-                                    - req_deliver_num_tools )
+                                    - req_deliver_num_tools)
 
                         distances[req_id] = dist
                         deltas[req_id] = delta
@@ -174,19 +194,24 @@ class Candidate:
 
                     # try to fill the route with other requests before the deliver request
                     # a request fits if the delta between the num_tools is low and the distance is low
-                    sorted_requests = {}
+                    requests_with_metric = {}
                     for req_fetch_id in critical_requests_fetch:
                         req_fetch_distance = problem_instance['distance_matrix'][req_deliver_id][req_fetch_id]
                         req_fetch_delta = problem_instance['requests'][req_fetch_id].num_tools
 
+                        # distance is mapped to a range from 1 - 4
+                        # delta is mapped to a range from 1 - 10
+                        # because we want to focus more on the range than the distance
                         score_distance = translate(req_fetch_distance, min_dist, max_dist, 1, 4)
-                        score_delta = translate(req_fetch_delta, min_delta, max_delta, 1, 10) # minimizing the delta is more important to us
+                        score_delta = translate(req_fetch_delta, min_delta, max_delta, 1, 10)
                         score = score_distance * score_delta
-                        sorted_requests[req_fetch_id] = score
+                        requests_with_metric[req_fetch_id] = score
 
+                    sorted_requests = sorted(requests_with_metric.items(), key=lambda x: x[1])
                     counter = 0
+
                     # add requests to the list (to keep this simple, all fetch req. are before deliver req.)
-                    for (fetch_req_id, fetch_req_score) in sorted_requests.items():
+                    for (fetch_req_id, fetch_req_score) in sorted_requests:
 
                         # check if the distance is shorter than the max distance per car
                         fetch_customer_id = problem_instance['requests'][fetch_req_id].customer_id
@@ -213,10 +238,14 @@ class Candidate:
                             # further delivery requests
                             critical_requests_fetch.remove(fetch_req_id)
                             route = tmp_route
+                            tools_returned_to_depot = tmp_route[-1].num_tools
 
                             # if we found some route that fetches more than delivers,
                             # we're just gonna stop building up this route
-                            if tmp_route[-1][1] >= 0:
+                            if tools_returned_to_depot >= 0:
+                                # TODO we could try to add another delivery request and re-do the sorted_requests loop
+                                #      though this probably won't make much sense for 1 or 2 tools
+                                #      we might need to define some border at which this behaviour gets triggered
                                 break
 
                     if counter <= 0:
@@ -225,15 +254,32 @@ class Candidate:
                         route = route.copy()
                         route.append(StopOver(req_deliver_customer_id, req_deliver_id, req_deliver_num_tools))
                         route.append(StopOver(0, 0, 0))
-                        # TODO persist the tmp route
 
-                    is_route_valid(route)
+                    route_valid = is_route_valid(route)
+                    if route_valid:
+                        trips_today.append(route)
+                    else:
+                        # at this point, I think we should just cancel this thing
+                        self.valid = False
+                        return -1
 
-                    if critical_requests_fetch:
-                        pass
-                        # TODO there are still some fetches left
-                        #      so we have to do something with them
+                # at this point, we have used up all deliver requests
+                # but there were some fetch requests that were not yet used
+                # so we'll just try to do a NN with them
+                if critical_requests_fetch:
+                    pass
+                    # TODO there are still some fetches left
+                    #      so we have to do something with them
 
+                # after we have allocated all requests on that day, let's sum up how many
+                # tools we "wasted" (i.e. brought to the depot without further using them)
+                unused_tools = 0
+                for trip in trips_today:
+                    unused_tools += trip[-1].num_tools
+
+                if unused_tools > wiggle_room:
+                    self.valid = False
+                    return -1
 
 
             # 3. loop over remaining (non critical) requests, use NN heuristic
