@@ -94,12 +94,12 @@ class Trip:
         return True
 
     def finalize(self):
-        # update stopovers (return to the depot)
-        self.stopovers.append(StopOver(0, 0, 0))
-
         # set complete distance
         last_stop_customer_id = self.stopovers[-1].customer_id
-        self.distance = problem_instance['distance'][last_stop_customer_id][0]
+        self.distance = self.trip_distance_wo_last_stop + problem_instance['distance'][last_stop_customer_id][0]
+
+        # update stopovers (return to the depot)
+        self.stopovers.append(StopOver(0, 0, 0))
 
         # update tool usages for the last day
         for (tool_id, usages) in self.used_tools_per_stop.items():
@@ -440,13 +440,26 @@ class Candidate:
             # 4. Now we have calculated all TSPs of this day
             # we can calculate the fitness, update max_tools nedded
 
+        print(cars_on_day)
+
+        # 5. All TSPs of all cars have been generated.
+        # sum up the cars, get max_cars, sum up distance
         max_cars = 0
         sum_cars = 0
         sum_distance = 0
-        tools_on_day = []
-        print(cars_on_day)
-        # 5. All TSPs of all cars have been generated.
-        # sum up the cars
+        for cars_day in cars_on_day:
+            sum_cars += len(cars_day)
+            if len(cars_day) > max_cars:
+                max_cars = len(cars_day)
+
+            for car in cars_day:
+                for trip in car:
+                    print(trip)
+                    sum_distance += trip.distance
+
+        print(max_cars)
+        print(sum_cars)
+        print(sum_distance)
 
         return 1
         # return max_cars * cars_per_day + \
