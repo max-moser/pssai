@@ -1018,10 +1018,13 @@ def find_mating_pair(values, scale, blocked_values=None):
     val_0 = get_random_candidate(values, scale)
     val_1 = None
 
-    while (val_1 is None) or (val_0 == val_1) \
-            or (val_0, val_1) in blocked_values or (val_1, val_0) in blocked_values:
+    print("blocked_values:", blocked_values)
+    while (val_1 is None) or (val_0 == val_1):
+            #or ((val_0, val_1) in blocked_values) or ((val_1, val_0) in blocked_values):
         val_1 = get_random_candidate(values, scale)
 
+    print("found val0:", val_0)
+    print("found val1:", val_1)
     return (val_0[2], val_1[2])
 
 
@@ -1084,8 +1087,6 @@ def solve_problem(problem):
 
     for i in range(0, PARAMETERS['number_of_generations']):
         debug_print('\nIteration: =====' + str(i) + '=======')
-        sum_fitness_values = sum(p.fit for p in population)
-        debug_print("sum fitness values:", sum_fitness_values)
 
         population_sorted = sorted(population, key=lambda p: p.fit)
         highest_fitness = population_sorted[-1:][0].fit
@@ -1093,14 +1094,17 @@ def solve_problem(problem):
 
         fitness_range = make_fitness_range(population, highest_fitness, lowest_fitness)
         #debug_print("fitness range:", fitness_range)
+        sum_fitness_values = fitness_range[-1][1] + 1 # the upper bound of the last entry.
+        #debug_print("sum fitness values:", sum_fitness_values)
 
         # create new population through crossover
         new_population = []
         num_new_candidates = 0
+        blocked_values = []
         while num_new_candidates < PARAMETERS['population_size'] - PARAMETERS['survivor_size']:
 
             # select crossover candidates (candidates with higher fitness have a higher chance to get reproduced)
-            (one, two) = find_mating_pair(fitness_range, sum_fitness_values)
+            (one, two) = find_mating_pair(fitness_range, sum_fitness_values, blocked_values)
             new_candidate = combine(one, two)
 
             if not new_candidate.valid:  # we need to generate an additional candidate
@@ -1118,6 +1122,7 @@ def solve_problem(problem):
             # debug_print('2: ', str(two))
             # debug_print('Combined: ', new_candidate)
             new_population.append(new_candidate)
+            blocked_values.append((one, two))
             num_new_candidates += 1
 
         # select survivors (the best ones survive => the ones with the lowest fitness)
