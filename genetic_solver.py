@@ -2,7 +2,7 @@ import random
 import datetime
 
 PARAMETERS = {'population_size': 100, 'survivor_size': 5, 'mutation_possibility': 0.0015,
-              'number_of_generations': 30000, 'max_depth_start': 2, 'max_depth_increase': 3, 'max_depth': 10}
+              'number_of_generations': 100, 'max_depth_start': 2, 'max_depth_increase': 3, 'max_depth': 10}
 problem_instance = None
 dbg = True
 
@@ -30,7 +30,7 @@ class Trip:
         self.used_tools_per_stop = {tool_id: [0] for (tool_id, tool) in problem_instance['tools'].items()}
 
     def try_add(self, stopover):
-        print(stopover)
+        #print("try_add", stopover)
 
         # 1. sum up the distance with the additional stopover
         distance_to_stopover = problem_instance['distance'][self.stopovers[-1].customer_id][stopover.customer_id]
@@ -39,7 +39,7 @@ class Trip:
 
         # check if the distance is ok
         if sum_distances > problem_instance['max_trip_distance']:
-            print("exceeded max_trip_distance")
+            #print("exceeded max_trip_distance")
             return False
 
         # 2. sum up all the used tools and check if the distance is ok
@@ -56,7 +56,7 @@ class Trip:
                 usages.append(to_add)
                 sum_load += to_add
             if sum_load > problem_instance['capacity']:
-                print("exceeded capacity (fetch)")
+                #print("exceeded capacity (fetch)")
                 return False
 
         # if the new request is a deliver request (and we have to load new tools at the depot),
@@ -84,7 +84,7 @@ class Trip:
                         sum_load = 0
                         sum_load += usages[stopover_idx]
                     if sum_load > problem_instance['capacity']:
-                        print("exceeded capacity (deliver)")
+                        #print("exceeded capacity (deliver)")
                         return False
 
         # 3. if we get here, we can add the new stop, and update the trip distance and the used tools
@@ -106,10 +106,10 @@ class Trip:
             usages.append(usages[-1])
 
     def __str__(self):
-        str = "Trip: \n"
+        to_string = "Trip: \n"
         for stopover in self.stopovers:
-            str += "\t" + stopover.__str__() + "\n"
-        return str
+            to_string += "\t" + stopover.__str__() + "\n"
+        return to_string
 
 
 class InOut:
@@ -134,12 +134,6 @@ class Candidate:
         self.valid = True  # gets set in repair()
         self.fit = -1
         return
-
-        # TODO do this elsewhere
-        if fitness_ is not None:
-            self.fit = fitness_
-        else:
-            self.fit = self.fitness_heuristic()
 
     def __str__(self):
         return 'CANDIDATE (' + str(self.fit) + '): ' + str(self.day_list)
@@ -355,14 +349,14 @@ class Candidate:
                         route.append(StopOver(req_deliver_customer_id, req_deliver_id, req_deliver_num_tools))
                         route.append(StopOver(0, 0, 0))
 
-                    print("PRE:", [str(so) for so in route], end="\n")
+                    #print("PRE:", [str(so) for so in route], end="\n")
                     route_valid = is_route_valid(route)
-                    print("POST:", [str(so) for so in route], end="\n\n")
+                    #print("POST:", [str(so) for so in route], end="\n\n")
                     if route_valid:
                         trips_today.append(route)
                     else:
                         # at this point, I think we should just cancel this thing
-                        print("THE ROUTE SEEMS TO BE INVALID?")
+                        #print("THE ROUTE SEEMS TO BE INVALID?")
                         self.valid = False
                         return -1
 
@@ -381,7 +375,7 @@ class Candidate:
                     unused_tools += trip[-1].num_tools
 
                 if unused_tools > wiggle_room:
-                    print("THE WIGGLE ROOM WAS EXHAUSTED")
+                    #print("THE WIGGLE ROOM WAS EXHAUSTED")
                     self.valid = False
                     return -1
 
@@ -413,7 +407,7 @@ class Candidate:
                 nn_stopover = StopOver(nn_customer_id, nn_req_id, nn_num_tools)
 
                 if not current_trip.try_add(nn_stopover):  # trip is full
-                    print("try_add was false => new trip")
+                    #print("try_add was false => new trip")
                     current_trip.finalize()
                     trips_today.append(current_trip)  # finalize the trip
                     current_trip = Trip()  # reset the current_trip
@@ -428,7 +422,6 @@ class Candidate:
             car_idx = 0
             cars = [[]]  # list of cars with list of trips inside
             for trip in trips_today:
-                print(trip)
                 sum_distance_car = 0
                 if (sum_distance_car + trip.distance) > problem_instance['max_trip_distance']:
                     cars.append([])
@@ -440,32 +433,53 @@ class Candidate:
             # 4. Now we have calculated all TSPs of this day
             # we can calculate the fitness, update max_tools nedded
 
-        print(cars_on_day)
+        #print("cars_on_day", cars_on_day)
 
         # 5. All TSPs of all cars have been generated.
         # sum up the cars, get max_cars, sum up distance
         max_cars = 0
         sum_cars = 0
         sum_distance = 0
-        for cars_day in cars_on_day:
+        max_tools_used = {tool_id: 0 for (tool_id, _) in problem_instance['tools'].items()}
+        for (day_idx, cars_day) in enumerate(cars_on_day):
+
+            if day_idx == 0:  # on the first day, we havn't used tools previously (obviously)
+                max_tools_used_on_day = {tool_id: 0 for (tool_id, _) in problem_instance['tools'].items()}
+            else:  # start with the min tools used from the previous day
+                max_tools_used_on_day = {tool_id: usages[0] for (tool_id, usages) in usages.items()}
+
             sum_cars += len(cars_day)
             if len(cars_day) > max_cars:
                 max_cars = len(cars_day)
 
             for car in cars_day:
                 for trip in car:
-                    print(trip)
+                    for (tool_id, _) in problem_instance['tools'].items():
+                        # add all the stuff we load at the depot (first stop)
+                        tools_loaded_at_depot = trip.used_tools_per_stop[tool_id][0]
+                        max_tools_used_on_day[tool_id] = tools_loaded_at_depot
+
                     sum_distance += trip.distance
 
-        print(max_cars)
-        print(sum_cars)
-        print(sum_distance)
+            # check if the max amount of tools is bigger on this day
+            for (tool_id, max_amount) in max_tools_used.items():
+                if max_tools_used_on_day[tool_id] > max_amount:
+                    max_tools_used[tool_id] = max_tools_used_on_day[tool_id]
 
-        return 1
-        # return max_cars * cars_per_day + \
-        #        sum_cars * cars_per_day + \
-        #        sum_distance * distance_cost + \
-        #        sum_tool_costs
+        #print(max_cars)
+        #print(sum_cars)
+        #print(sum_distance)
+        #print(max_tools_used)
+
+        # sum up tool costs
+        sum_tool_costs = 0
+        for (tool_id, max_amount) in max_tools_used.items():
+            sum_tool_costs += max_amount * problem_instance['tools'][tool_id].cost
+
+        return max_cars     * problem_instance['vehicle_cost']     + \
+               sum_cars     * problem_instance['vehicle_day_cost'] + \
+               sum_distance * problem_instance['distance_cost']    + \
+               sum_tool_costs
 
     def mutate(self):
         """Perform a random mutation
@@ -474,9 +488,9 @@ class Candidate:
         """
 
         r = random.random()
-        print("mutate")
-        print(self.day_list)
         if r < PARAMETERS['mutation_possibility']:
+            #print("mutate")
+            #print(self.day_list)
             # TODO mutate only one request?
 
             while True: # find a request to mutate where first start day != last start day
@@ -488,13 +502,13 @@ class Candidate:
                 if first_day != last_day:
                     break
 
-            print("request to mutate:", request_id)
+            #print("request to mutate:", request_id)
 
             while True: # find a new start day
                 new_start_day = random.randrange(first_day, last_day + 1)
                 old_start_day = self.find_start_day_of_request(request_id, first_day, last_day)
 
-                print("new start day vs old start day:", new_start_day, old_start_day)
+                #print("new start day vs old start day:", new_start_day, old_start_day)
 
                 if new_start_day != old_start_day: # change the startday and endday of the request
                     self.day_list[new_start_day]           [request_id] = 'deliver'
@@ -503,7 +517,7 @@ class Candidate:
                     self.day_list[old_start_day + num_days].pop(request_id, None)
                     break
 
-        print(self.day_list)
+            #print(self.day_list)
 
 
     def find_start_day_of_request(self, request_id, first_day, last_day):
@@ -680,7 +694,7 @@ class Candidate:
 
             max_depth = PARAMETERS['max_depth_start']
             while True:
-                print("max_depth:", max_depth)
+                #print("max_depth:", max_depth)
                 repair_result = self.rec_repair2(start_day_dict, extended_day_list, 0, max_depth)
 
                 if repair_result is None:
@@ -688,11 +702,11 @@ class Candidate:
                         max_depth += PARAMETERS['max_depth_increase']
                         continue
                     else:
-                        print("WE ARE SORRY BUT YOUR PROBLEM CANNOT GET FIXED.")
+                        #print("WE ARE SORRY BUT YOUR PROBLEM CANNOT GET FIXED.")
                         self.valid = False
                         return
                 else:
-                    print("WE FIXED YOUR PROBLEM FOR YOU MATE")
+                    #print("WE FIXED YOUR PROBLEM FOR YOU MATE")
                     self.valid = True
                     # to create a "normal" day-list from the extended day-list,
                     # we only need to delete the "running" entries from the latter
@@ -817,10 +831,10 @@ def is_route_valid(tmp_route):
         loaded += change_amount
 
         if loaded > problem_instance["capacity"]:
-            print("CAPACITY.")
+            #print("CAPACITY.")
             return False
         elif sum_distance > problem_instance["max_trip_distance"]:
-            print("SUM DISTANCE.", sum_distance, problem_instance["max_trip_distance"])
+            #print("SUM DISTANCE.", sum_distance, problem_instance["max_trip_distance"])
             return False
 
         max_load = max(max_load, loaded)
@@ -831,7 +845,7 @@ def is_route_valid(tmp_route):
         # if we need to fetch something at the depot already,
         # we have to take into account that we are
         if (max_load + depot_load) > problem_instance["capacity"]:
-            print("CAPACITY THROUGH DEPOT LOADING FUCKED")
+            #print("CAPACITY THROUGH DEPOT LOADING FUCKED")
             return False
 
         tmp_route[0].num_tools = depot_load
@@ -889,12 +903,12 @@ def choose_request_to_move(largest_peak_day, req_id):
     request_length = problem_instance['requests'][req_id].num_days
     first_day = problem_instance['requests'][req_id].first_day
     last_day = problem_instance['requests'][req_id].last_day
-    print("choose_req_to_move() first_day: " + str(first_day) + ", last_day: " + str(last_day))
+    #print("choose_req_to_move() first_day: " + str(first_day) + ", last_day: " + str(last_day))
 
     # check if we could move the request, so that the tools are not at the customer at the collision day.
     for day in range(first_day, last_day + 1):
 
-        print("day:", day, "dar+req_len:", day + request_length, "largest_peak_day:", largest_peak_day)
+        #print("day:", day, "dar+req_len:", day + request_length, "largest_peak_day:", largest_peak_day)
         # to not collide with the peak-day, the request has to either end before or start after the collision day
         if ((day + request_length) < largest_peak_day) or (day > largest_peak_day):
             possible_start_days.append(day)
@@ -927,7 +941,11 @@ def initial_population(population_size):
             continue
 
         fit_ = candidate.fitness_heuristic()
+        if fit_ == -1:
+            continue # candidate is not valid
+
         print("Fitness is: ", fit_)
+        candidate.fit = fit_
         # print(candidate.get_extended_daylist())
         population.append(candidate)
         i += 1
@@ -959,6 +977,8 @@ def combine(a, b):
 
     new_candidate = Candidate(new_day_list)
     new_candidate.repair2()  # repair the candidate
+    fit_ = new_candidate.fitness_heuristic()
+    new_candidate.fit = fit_
     return new_candidate
 
 
@@ -1042,7 +1062,7 @@ def solve_problem(problem):
     # print("\n", population[1])
     # print("\n", new_candidate)
 
-    for i in range(1):  # TODO range(0, PARAMETERS['number_of_generations']):
+    for i in range(0, PARAMETERS['number_of_generations']):
         debug_print('\nIteration: =====' + str(i) + '=======')
         sum_fitness_values = sum(p.fit for p in population)
         debug_print("sum fitness values:", sum_fitness_values)
@@ -1052,8 +1072,8 @@ def solve_problem(problem):
 
         # create new population through crossover
         new_population = []
-        i = 0
-        while i < PARAMETERS['population_size'] - PARAMETERS['survivor_size']:
+        num_new_candidates = 0
+        while num_new_candidates < PARAMETERS['population_size'] - PARAMETERS['survivor_size']:
 
             # select crossover candidates (candidates with higher fitness have a higher chance to get reproduced)
             (one, two) = find_mating_pair(fitness_range, sum_fitness_values)
@@ -1074,7 +1094,7 @@ def solve_problem(problem):
             # debug_print('2: ', str(two))
             # debug_print('Combined: ', new_candidate)
             new_population.append(new_candidate)
-            i += 1
+            num_new_candidates += 1
 
         debug_print("new_population size b4 insert pop size:", len(new_population))
         # select survivors (the best ones survive)
@@ -1084,8 +1104,7 @@ def solve_problem(problem):
         debug_print("population size to insert:", len(population))
 
         new_population.extend(population)
-
-
+        population = new_population
         debug_print("new_population size:", len(new_population))
 
         # debug_print('Population after mutation: ' + str([str(p) for p in population]))
