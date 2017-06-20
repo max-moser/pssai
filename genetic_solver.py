@@ -244,7 +244,8 @@ class Candidate:
 
                     req_deliver_customer_id = problem_instance['requests'][req_deliver_id].customer_id
                     req_deliver_num_tools   = problem_instance['requests'][req_deliver_id].num_tools
-                    fetch_counter = 0
+                    fetch_counter            = 0
+                    successful_fetch_counter = 0
 
                     # we start at the depot
                     route = []
@@ -300,7 +301,7 @@ class Candidate:
                             tmp_route = route.copy()
 
                             # add the (CUSTOMER_ID, REQUEST_ID) tuples to the tmp route
-                            if fetch_counter > 0:
+                            if successful_fetch_counter > 0:
                                 # pretty stupid fix
                                 # but otherwise we would append the delivery and depot each time
                                 # that we append a new fetch
@@ -320,6 +321,7 @@ class Candidate:
                                 critical_requests_fetch.remove(fetch_req_id)
                                 route = tmp_route
                                 tools_returned_to_depot = tmp_route[-1].num_tools
+                                successful_fetch_counter += 1
 
                                 # if we found some route that fetches more than delivers,
                                 # we're just gonna stop building up this route
