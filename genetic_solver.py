@@ -80,8 +80,8 @@ class Trip:
             # if we had to add tools at the depot, we have to check the capacity of the past days
             if to_add > 0:
                 for stopover_idx in range(len(self.stopovers) + 1):  # loop over all days (+1, since we added a new one)
+                    sum_load = 0
                     for (tool_id, usages) in new_num_tools.items():
-                        sum_load = 0
                         sum_load += usages[stopover_idx]
                     if sum_load > problem_instance['capacity']:
                         #print("exceeded capacity (deliver)")
