@@ -24,7 +24,7 @@ def create_output_file(problem_instance, best_solution, filename_input):
             output_str += "\n"
         output_str += "\n"
 
-    print(output_str)
+    #print(output_str)
 
     filename_input_split = filename_input.rsplit(".", 1)
     filename_output = filename_input_split[0] + ".sol.genetic.txt"

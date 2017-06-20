@@ -1,5 +1,6 @@
 import random
 import datetime
+import copy
 
 PARAMETERS = {'population_size': 100, 'survivor_size': 5, 'mutation_possibility': 0.0015,
               'number_of_generations': 2, 'max_depth_start': 2, 'max_depth_increase': 3, 'max_depth': 10}
@@ -37,7 +38,6 @@ class Trip:
         self.finalize()
 
     def try_add(self, stopover):
-        #print("try_add", stopover)
 
         # 1. sum up the distance with the additional stopover
         distance_to_stopover = problem_instance['distance'][self.stopovers[-1].customer_id][stopover.customer_id]
@@ -51,7 +51,7 @@ class Trip:
 
         # 2. sum up all the used tools and check if the distance is ok
         stopover_tool_id = problem_instance['requests'][stopover.request_id].tool_id
-        new_loaded_tools_per_stop = self.loaded_tools_per_stop.copy()
+        new_loaded_tools_per_stop = copy.deepcopy(self.loaded_tools_per_stop)
 
         # if the new request is a fetch request, we only have to look at the changes of this stopover
         if stopover.num_tools < 0:
@@ -490,7 +490,6 @@ class Candidate:
         sum_cars = 0
         sum_distance = 0
         max_tools_used = {tool_id: 0 for (tool_id, _) in problem_instance['tools'].items()}
-        print(usages)
         for (day_idx, cars_day) in enumerate(cars_on_day):
 
             if day_idx == 0:  # on the first day, we havn't used tools previously (obviously)
@@ -503,21 +502,20 @@ class Candidate:
                 max_cars = len(cars_day)
 
             for (car_idx, car) in enumerate(cars_day):
-                max_additional_tools_car  = {tool_id: 0 for (tool_id, _) in problem_instance['tools'].items()}
-                tools_loaded_at_depot_car = {tool_id: 0 for (tool_id, _) in problem_instance['tools'].items()}
+                max_additional_tools_car = {tool_id: 0 for (tool_id, _) in problem_instance['tools'].items()}
+                currently_used_tools_car = {tool_id: 0 for (tool_id, _) in problem_instance['tools'].items()}
                 for trip in car:
                     for (tool_id, _) in problem_instance['tools'].items():
                         # add all the stuff we load at the depot (first stop of the trip)
-                        tools_loaded_at_depot_car[tool_id] += trip.loaded_tools_per_stop[tool_id][0]
-                        if tools_loaded_at_depot_car[tool_id] > max_additional_tools_car[tool_id]:
-                            max_additional_tools_car[tool_id] = tools_loaded_at_depot_car[tool_id]
+                        currently_used_tools_car[tool_id] += trip.loaded_tools_per_stop[tool_id][0]
+                        if currently_used_tools_car[tool_id] > max_additional_tools_car[tool_id]:
+                            max_additional_tools_car[tool_id] = currently_used_tools_car[tool_id]
                         # subtract what we bring back to the depot (last stop of the trip)
-                        tools_loaded_at_depot_car[tool_id] -= trip.loaded_tools_per_stop[tool_id][-1]
+                        currently_used_tools_car[tool_id] -= trip.loaded_tools_per_stop[tool_id][-1]
 
                     sum_distance += trip.distance
 
                 for (tool_id, _) in problem_instance['tools'].items():
-                    print(day_idx, car_idx, "additional_tools", tool_id, max_additional_tools_car[tool_id])
                     max_tools_used_on_day[tool_id] += max_additional_tools_car[tool_id]
 
             # check if the max amount of tools is bigger on this day
@@ -525,10 +523,10 @@ class Candidate:
                 if max_tools_used_on_day[tool_id] > max_amount:
                     max_tools_used[tool_id] = max_tools_used_on_day[tool_id]
 
-        print(max_cars)
-        print(sum_cars)
-        print(sum_distance)
-        print(max_tools_used)
+        #print(max_cars)
+        #print(sum_cars)
+        #print(sum_distance)
+        #print(max_tools_used)
 
         # sum up tool costs
         sum_tool_costs = 0

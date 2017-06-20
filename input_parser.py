@@ -132,7 +132,7 @@ def main(argv=None):
     create_distance_matrix(problem)
     #print(problem)
     #pretty print via json.dumps
-    print(json.dumps(problem, sort_keys=True, indent=4, default=str))
+    #print(json.dumps(problem, sort_keys=True, indent=4, default=str))
 
     # problem = Problem(problem['tools'], problem['customers'], problem['requests'])
     best_solution = genetic_solver.solve_problem(problem)
