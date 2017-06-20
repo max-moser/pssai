@@ -23,8 +23,8 @@ class StopOver:
 
 
 class Trip:
-    def __init__(self, used_capacity=0):
-        self.previous_trips_distance = used_capacity  # distance from past trips of the same car
+    def __init__(self, previous_trips_distance=0):
+        self.previous_trips_distance = previous_trips_distance  # distance from past trips of the same car
         self.trip_distance_wo_last_stop = 0  # distance of this trip without the distance to the depot at the end
         self.stopovers = [StopOver(0, 0, 0)]  # list of requests the trip contains (0 = depot)
         self.used_tools_per_stop = {tool_id: [0] for (tool_id, tool) in problem_instance['tools'].items()}
@@ -104,6 +104,12 @@ class Trip:
         # update tool usages for the last day
         for (tool_id, usages) in self.used_tools_per_stop.items():
             usages.append(usages[-1])
+
+    def __str__(self):
+        str = "Trip: \n"
+        for stopover in self.stopovers:
+            str += "\t" + stopover.__str__() + "\n"
+        return str
 
 
 class InOut:
@@ -186,11 +192,7 @@ class Candidate:
         return usage
 
     def fitness_heuristic(self):
-        max_cars = 0
-        sum_cars = 0
-        sum_distance = 0
-        tools_on_day = []
-        cars_on_day = []
+        cars_on_day = [[] for _ in range(problem_instance['days'])]
 
         # first, get the 1) optimistic minimum of tools needed per day and 2) the maximum of tools needed per day
         usages = self.get_tool_usages()
@@ -412,16 +414,37 @@ class Candidate:
 
                 if not current_trip.try_add(nn_stopover):  # trip is full
                     print("try_add was false => new trip")
-                    trips_today.append(current_trip.finalize())  # finalize the trip
+                    current_trip.finalize()
+                    trips_today.append(current_trip)  # finalize the trip
                     current_trip = Trip()  # reset the current_trip
                     current_trip.try_add(nn_stopover)  # the first stop can never fail, unless our problem instance is faulty
 
                 non_critical_requests.pop(nn_req_id, None)  # remove the request from the list of requests yet to assign
 
+            current_trip.finalize()
+            trips_today.append(current_trip)  # add the last trip to the array
+
+            # loop over trips, assign them to cars
+            car_idx = 0
+            cars = [[]]  # list of cars with list of trips inside
+            for trip in trips_today:
+                print(trip)
+                sum_distance_car = 0
+                if (sum_distance_car + trip.distance) > problem_instance['max_trip_distance']:
+                    cars.append([])
+                    car_idx += 1
+
+                cars[car_idx].append(trip)  # append trip to car
+
+            cars_on_day[day_index] = cars
             # 4. Now we have calculated all TSPs of this day
             # we can calculate the fitness, update max_tools nedded
 
-
+        max_cars = 0
+        sum_cars = 0
+        sum_distance = 0
+        tools_on_day = []
+        print(cars_on_day)
         # 5. All TSPs of all cars have been generated.
         # sum up the cars
 
