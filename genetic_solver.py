@@ -2,7 +2,7 @@ import random
 import datetime
 
 PARAMETERS = {'population_size': 100, 'survivor_size': 5, 'mutation_possibility': 0.0015,
-              'number_of_generations': 30000, 'max_depth_start': 2, 'max_depth_increase': 3, 'max_depth': 14}
+              'number_of_generations': 30000, 'max_depth_start': 2, 'max_depth_increase': 3, 'max_depth': 10}
 problem_instance = None
 dbg = True
 
@@ -19,7 +19,7 @@ class StopOver:
         self.num_tools = num_tools  # negative num_tools = fetch request, positive num_tools = deliver request
 
     def __str__(self):
-        return "StopOver: (" + str(self.customer_id) + ", " + str(self.request_id) + ", " + str(self.num_tools) + ")"
+        return "StopOver (cust, req, #tools): (" + str(self.customer_id) + ", " + str(self.request_id) + ", " + str(self.num_tools) + ")"
 
 
 class Trip:
@@ -30,6 +30,8 @@ class Trip:
         self.used_tools_per_stop = {tool_id: [0] for (tool_id, tool) in problem_instance['tools'].items()}
 
     def try_add(self, stopover):
+        print(stopover)
+
         # 1. sum up the distance with the additional stopover
         distance_to_stopover = problem_instance['distance'][self.stopovers[-1].customer_id][stopover.customer_id]
         distance_to_depot    = problem_instance['distance'][stopover.customer_id]          [0]
@@ -37,50 +39,58 @@ class Trip:
 
         # check if the distance is ok
         if sum_distances > problem_instance['max_trip_distance']:
+            print("exceeded max_trip_distance")
             return False
 
         # 2. sum up all the used tools and check if the distance is ok
+        stopover_tool_id = problem_instance['requests'][stopover.request_id].tool_id
+        new_num_tools = self.used_tools_per_stop.copy()
+
         # if the new request is a fetch request, we only have to look at the changes of today
         if stopover.num_tools < 0:
-            sum_load = abs(stopover.num_tools)
-            for (tool_id, usages) in self.used_tools_per_stop.items():
-                sum_load += usages[-1].num_tools
+            sum_load = 0
+            for (tool_id, usages) in new_num_tools.items():  # add a new day to usages list
+                to_add = usages[-1]
+                if tool_id == stopover_tool_id:
+                    to_add += abs(stopover.num_tools)
+                usages.append(to_add)
+                sum_load += to_add
             if sum_load > problem_instance['capacity']:
+                print("exceeded capacity (fetch)")
                 return False
 
-        # if the new request is a deliver request, we have to look at all the past days
+        # if the new request is a deliver request (and we have to load new tools at the depot),
+        #    we have to look at all the past days
         else:
-            for (tool_id, usages) in self.used_tools_per_stop.items():
-                sum_load = stopover.num_tools
-                for stopover_idx in range(len(self.stopovers)):
-                    # FIXME removed: (...).num_tools
-                    # FIXME from     sum_load += usages[stopover_idx].num_tools
-                    sum_load += usages[stopover_idx]
-                if sum_load > problem_instance['capacity']:
-                    return False
+            tools_loaded = new_num_tools[stopover_tool_id][-1]
+            to_add = stopover.num_tools - tools_loaded
+            if to_add < 0:
+                to_add = 0  # we have enough tools loaded, so we do not need to load more tools!
+
+            # update the past days, if we had to load something at the depot
+            if to_add > 0:
+                for stopover_idx in range(len(self.stopovers)):  # loop over all days
+                    new_num_tools[stopover_tool_id][stopover_idx] += to_add
+
+            for (tool_id, usages) in new_num_tools.items():  # add a new day to usages list
+                usages.append(usages[-1])
+                if tool_id == stopover_tool_id:  # now we have to deliver the tools
+                    usages.append(usages[-1] - stopover.num_tools)
+
+            # if we had to add tools at the depot, we have to check the capacity of the past days
+            if to_add > 0:
+                for stopover_idx in range(len(self.stopovers) + 1):  # loop over all days (+1, since we added a new one)
+                    for (tool_id, usages) in new_num_tools.items():
+                        sum_load = 0
+                        sum_load += usages[stopover_idx]
+                    if sum_load > problem_instance['capacity']:
+                        print("exceeded capacity (deliver)")
+                        return False
 
         # 3. if we get here, we can add the new stop, and update the trip distance and the used tools
         self.stopovers.append(stopover)
         self.trip_distance_wo_last_stop += distance_to_stopover
-
-        request_tool_id = problem_instance['requests'][stopover.request_id].tool_id
-
-        # FIXME is this the way to go?
-        self.used_tools_per_stop[request_tool_id].append(0)
-
-        if stopover.num_tools < 0:
-            self.used_tools_per_stop[request_tool_id][-1] += abs(stopover.num_tools)
-        else:
-            # FIXME remove print/input
-            print(self.used_tools_per_stop)
-            print([str(so) for so in self.stopovers])
-            input("yeah")
-            for stopover_idx in range(len(self.stopovers)):
-                # FIXME remove print/input
-                print(self.used_tools_per_stop[request_tool_id])
-                input("woo")
-                self.used_tools_per_stop[request_tool_id][stopover_idx] += stopover.num_tools
-
+        self.used_tools_per_stop = new_num_tools
         return True
 
     def finalize(self):
@@ -179,18 +189,20 @@ class Candidate:
         max_cars = 0
         sum_cars = 0
         sum_distance = 0
-        tsp_per_day = []
+        tools_on_day = []
+        cars_on_day = []
 
         # first, get the 1) optimistic minimum of tools needed per day and 2) the maximum of tools needed per day
-        cars = []
         usages = self.get_tool_usages()
         trips_per_day = {}
 
-        # TODO check if we can use NN heuristic
-        #       we can only use NN if FOR ALL TOOLS on this day this holds: (usages[tool][day][max] <= num_tools)
-        #       otherwise we must make sure to fetch the tools before delivering them to not exceed the limit
+        # check if we can use NN heuristic
+        # we can only use NN if FOR ALL TOOLS on this day this holds: (usages[tool][day][max] <= num_tools)
+        # otherwise we must make sure to fetch the tools before delivering them to not exceed the limit
 
         for (day_index, requests_on_day) in enumerate(self.day_list):
+            tsp_per_day = []
+
             trips_per_day[day_index] = []
             trips_today = trips_per_day[day_index]
 
@@ -201,7 +213,7 @@ class Candidate:
                     critical_tools.append(tool_id)
 
             # FIXME remove this...
-            critical_tools = problem_instance["tools"].keys()
+            #critical_tools = problem_instance["tools"].keys()
 
             # 2. loop over critical tools, make tsp for critical requests
             for critical_tool_id in critical_tools:
@@ -399,37 +411,19 @@ class Candidate:
                 nn_stopover = StopOver(nn_customer_id, nn_req_id, nn_num_tools)
 
                 if not current_trip.try_add(nn_stopover):  # trip is full
+                    print("try_add was false => new trip")
                     trips_today.append(current_trip.finalize())  # finalize the trip
                     current_trip = Trip()  # reset the current_trip
                     current_trip.try_add(nn_stopover)  # the first stop can never fail, unless our problem instance is faulty
-                    non_critical_requests.pop(nn_req_id, None)  # remove the request from the list of requests yet to assign
 
-            for (req_id, req_status) in requests_on_day.items():
-                request = problem_instance['requests'][req_id]
+                non_critical_requests.pop(nn_req_id, None)  # remove the request from the list of requests yet to assign
 
-                # TODO get no. cars, get tsp
-                # - auslastung der autos
-                # - nearest neighbour (+ depotbesuche dazwischen erlaubt)
-                # - tools mit dem gleichen typ mit dem gleichen auto machen wenn möglich (=> weniger tools nötig)
-                break
+            # 4. Now we have calculated all TSPs of this day
+            # we can calculate the fitness, update max_tools nedded
 
-            sum_cars += len(cars)
-            if len(cars) > max_cars:
-                max_cars = len(cars)
 
-        max_tools = {}  # [0 for _ in range(len(problem_instance['tools']))]
-        for k in problem_instance['tools'].keys():
-            max_tools[k] = 0
-
-        for tsp in tsp_per_day:
-            for request in tsp:
-                # TODO
-                break
-
-        sum_tool_costs = 0
-        for tool in max_tools:
-            break
-            # TODO sum_tool_costs += tool.max * problem_instance['tools'][tool.id].price
+        # 5. All TSPs of all cars have been generated.
+        # sum up the cars
 
         return 1
         # return max_cars * cars_per_day + \
@@ -1015,10 +1009,10 @@ def solve_problem(problem):
     for i in range(1):  # TODO range(0, PARAMETERS['number_of_generations']):
         debug_print('\nIteration: =====' + str(i) + '=======')
         sum_fitness_values = sum(p.fit for p in population)
-        debug_print(sum_fitness_values)
+        debug_print("sum fitness values:", sum_fitness_values)
 
         fitness_range = make_fitness_range(population)
-        debug_print(fitness_range)
+        debug_print("fitness range:", fitness_range)
 
         # create new population through crossover
         new_population = []
