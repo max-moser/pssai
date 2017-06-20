@@ -124,7 +124,12 @@ class Candidate:
         return 'CANDIDATE (' + str(self.fit) + '): ' + str(self.day_list)
 
     def __eq__(self, other):
-        return self.day_list == other.day_list
+        if isinstance(other, self.__class__):
+            return self.day_list == other.day_list
+        return False
+
+    def __ne__(self, other):
+        return not self.__eq__(other)
 
     def get_tool_usages(self):
         day_list = self.day_list
@@ -904,13 +909,10 @@ def find_mating_pair(values, scale, blocked_values=None):
     val_0 = get_random_candidate(values, scale)
     val_1 = None
 
-    print("blocked_values:", blocked_values)
-    while (val_1 is None) or (val_0 == val_1):
-            #or ((val_0, val_1) in blocked_values) or ((val_1, val_0) in blocked_values):
+    while (val_1 is None) or (val_0 == val_1) \
+            or ((val_0, val_1) in blocked_values) or ((val_1, val_0) in blocked_values):
         val_1 = get_random_candidate(values, scale)
 
-    print("found val0:", val_0)
-    print("found val1:", val_1)
     return (val_0[2], val_1[2])
 
 
@@ -981,7 +983,7 @@ def solve_problem(problem):
         fitness_range = make_fitness_range(population, highest_fitness, lowest_fitness)
         #debug_print("fitness range:", fitness_range)
         sum_fitness_values = fitness_range[-1][1] + 1 # the upper bound of the last entry.
-        #debug_print("sum fitness values:", sum_fitness_values)
+        debug_print("sum fitness values:", sum_fitness_values)
 
         # create new population through crossover
         new_population = []
