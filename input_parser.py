@@ -5,6 +5,7 @@ import argparse
 import json
 import math
 import genetic_solver
+import output_parser
 
 
 class Tool:
@@ -135,9 +136,9 @@ def main(argv=None):
 
     # problem = Problem(problem['tools'], problem['customers'], problem['requests'])
     candidate_solutions = genetic_solver.solve_problem(problem)
-    # sorted_solutions = sorted(candidate_solutions, key=lambda sol: sol.fit, reverse=True)
-    best_solution = max(candidate_solutions, key=lambda sol: sol.fit)
-
+    # sorted_solutions = sorted(candidate_solutions, key=lambda sol: sol.fit)
+    best_solution = min(candidate_solutions, key=lambda sol: sol.fit)
+    output_parser.create_output_file(problem, best_solution, "output.txt")
 
 def get_value_from_line(line):
     return line.split('=', 1)[1].strip()

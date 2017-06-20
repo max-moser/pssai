@@ -2,7 +2,7 @@ import random
 import datetime
 
 PARAMETERS = {'population_size': 100, 'survivor_size': 5, 'mutation_possibility': 0.0015,
-              'number_of_generations': 100, 'max_depth_start': 2, 'max_depth_increase': 3, 'max_depth': 10}
+              'number_of_generations': 2, 'max_depth_start': 2, 'max_depth_increase': 3, 'max_depth': 10}
 problem_instance = None
 dbg = True
 
@@ -430,14 +430,16 @@ class Candidate:
 
             # loop over trips, assign them to cars
             car_idx = 0
+            sum_distance_car = 0
             cars = [[]]  # list of cars with list of trips inside
             for trip in trips_today:
-                sum_distance_car = 0
                 if (sum_distance_car + trip.distance) > problem_instance['max_trip_distance']:
                     cars.append([])
                     car_idx += 1
+                    sum_distance_car = 0
 
                 cars[car_idx].append(trip)  # append trip to car
+                sum_distance_car += trip.distance
 
             cars_on_day[day_index] = cars
             # 4. Now we have calculated all TSPs of this day
@@ -485,6 +487,8 @@ class Candidate:
         sum_tool_costs = 0
         for (tool_id, max_amount) in max_tools_used.items():
             sum_tool_costs += max_amount * problem_instance['tools'][tool_id].cost
+
+        self.cars_on_day = cars_on_day
 
         return max_cars     * problem_instance['vehicle_cost']     + \
                sum_cars     * problem_instance['vehicle_day_cost'] + \
