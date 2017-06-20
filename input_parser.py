@@ -16,9 +16,11 @@ class Tool:
         self.cost = int(cost)
 
     @classmethod
-    def create_from_line(self, line):
+    def create_from_line(cls, line):
         line_splitted = line.split('\t')
-        return self(*line_splitted) # splat operator, for unpacking argument lists
+
+        # splat operator, for unpacking argument lists
+        return cls(*line_splitted)
 
     def __repr__(self):
         return 'TOOL #{}: size={}; num_available={}; cost={};'.format(self.id, self.size, self.num_available, self.cost)
@@ -32,49 +34,37 @@ class Customer:
         self.y = int(y)
 
     @classmethod
-    def create_from_line(self, line):
+    def create_from_line(cls, line):
         line_splitted = line.split('\t')
-        return self(*line_splitted) # splat operator, for unpacking argument lists
+
+        # splat operator, for unpacking argument lists
+        return cls(*line_splitted)
 
     def __repr__(self):
         return 'CUSTOMER #{}: x={}; y={};'.format(self.id, self.x, self.y)
 
 
 class Request:
-    def __init__(self, id, customer_id, first_day, last_day, num_days, tool_id, num_tools):
+    def __init__(self, id_, customer_id, first_day, last_day, num_days, tool_id, num_tools):
         # ctor
-        self.id = int(id)
+        self.id          = int(id_)
         self.customer_id = int(customer_id)
-        self.first_day = int(first_day) - 1 # for convenience when working with arrays of day-numbers
-        self.last_day  = int(last_day)  - 1 # for convenience when working with arrays of day-numbers
-        self.num_days = int(num_days)
-        self.tool_id = int(tool_id)
-        self.num_tools = int(num_tools)
+        self.first_day   = int(first_day) - 1 # for convenience when working with arrays of day-numbers
+        self.last_day    = int(last_day)  - 1 # for convenience when working with arrays of day-numbers
+        self.num_days    = int(num_days)
+        self.tool_id     = int(tool_id)
+        self.num_tools   = int(num_tools)
 
     @classmethod
-    def create_from_line(self, line):
+    def create_from_line(cls, line):
         line_splitted = line.split('\t')
-        return self(*line_splitted) # splat operator, for unpacking argument lists
+
+        # splat operator, for unpacking argument lists
+        return cls(*line_splitted)
 
     def __repr__(self):
         return 'REQUEST #{}: customer_id={}; first_day={}; last_day={}; num_days={}; tool_id={}; num_tools={};'\
             .format(self.id, self.customer_id, self.first_day, self.last_day, self.num_days, self.tool_id, self.num_tools)
-
-#TODO REMOVE ME?
-class Problem:
-    def __init__(self, tools=None, customers=None, requests=None):
-        self.tools = tools
-        self.customers = customers
-        self.requests = requests
-
-        if self.tools is None:
-            self.tools = {}
-
-        if self.customers is None:
-            self.customers = {}
-
-        if self.requests is None:
-            self.requests = {}
 
 
 def main(argv=None):
@@ -83,7 +73,7 @@ def main(argv=None):
     # TODO add more arguments? (algorithm parameters?)
     args = parser.parse_args(argv)
 
-    #read the file
+    # read the file
     with open(args.file, 'r') as f:
         lines = [line.strip() for line in f.readlines() if line.strip()]
 
@@ -96,25 +86,25 @@ def main(argv=None):
     # decide what information to save for each line
     for line in lines:
         if line.startswith('DATASET'):
-            problem['dataset'] = getValueFromLine(line)
+            problem['dataset'] = get_value_from_line(line)
         elif line.startswith('NAME'):
-            problem['name'] = getValueFromLine(line)
+            problem['name'] = get_value_from_line(line)
 
         elif line.startswith('DAYS'):
-            problem['days'] = int(getValueFromLine(line))
+            problem['days'] = int(get_value_from_line(line))
         elif line.startswith('CAPACITY'):
-            problem['capacity'] = int(getValueFromLine(line))
+            problem['capacity'] = int(get_value_from_line(line))
         elif line.startswith('MAX_TRIP_DISTANCE'):
-            problem['max_trip_distance'] = int(getValueFromLine(line))
+            problem['max_trip_distance'] = int(get_value_from_line(line))
         elif line.startswith('DEPOT_COORDINATE'):
-            problem['depot_coordinate'] = int(getValueFromLine(line))
+            problem['depot_coordinate'] = int(get_value_from_line(line))
 
         elif line.startswith('VEHICLE_COST'):
-            problem['vehicle_cost'] = int(getValueFromLine(line))
+            problem['vehicle_cost'] = int(get_value_from_line(line))
         elif line.startswith('VEHICLE_DAY_COST'):
-            problem['vehicle_day_cost'] = int(getValueFromLine(line))
+            problem['vehicle_day_cost'] = int(get_value_from_line(line))
         elif line.startswith('DISTANCE_COST'):
-            problem['distance_cost'] = int(getValueFromLine(line))
+            problem['distance_cost'] = int(get_value_from_line(line))
 
         elif line.startswith('TOOLS'):
             state = 'tools'
@@ -138,7 +128,7 @@ def main(argv=None):
             #elif state == 'distance':
                 #problem['distance'].append(Distance.create_from_line(line))
 
-    createDistanceMatrix(problem)
+    create_distance_matrix(problem)
     #print(problem)
     #pretty print via json.dumps
     print(json.dumps(problem, sort_keys=True, indent=4, default=str))
@@ -147,24 +137,24 @@ def main(argv=None):
     genetic_solver.solve_problem(problem)
 
 
-def getValueFromLine(line):
+def get_value_from_line(line):
     return line.split('=', 1)[1].strip()
 
 
-def createDistanceMatrix(problem):
-    lenCustomers = range(len(problem['customers']))
-    problem['distance'] = [[0 for _ in lenCustomers] for _ in lenCustomers]
+def create_distance_matrix(problem):
+    len_customers = range(len(problem['customers']))
+    problem['distance'] = [[0 for _ in len_customers] for _ in len_customers]
     for k1, v1 in problem['customers'].items():
         for k2, v2 in problem['customers'].items():
-            problem['distance'][k1][k2] = distanceBetweenPoints(v1, v2)
+            problem['distance'][k1][k2] = distance_between_points(v1, v2)
 
 
-def distanceBetweenPoints(p1, p2):
-    diffX = math.fabs(p1.x - p2.x)
-    diffY = math.fabs(p1.y - p2.y)
-    return math.floor(math.sqrt(math.pow(diffX, 2) + math.pow(diffY, 2)))
+def distance_between_points(p1, p2):
+    diff_x = math.fabs(p1.x - p2.x)
+    diff_y = math.fabs(p1.y - p2.y)
+    return math.floor(math.sqrt(math.pow(diff_x, 2) + math.pow(diff_y, 2)))
 
 
 if __name__ == '__main__':
-    exit = main()
-    sys.exit(exit)
+    exit_code = main()
+    sys.exit(exit_code)

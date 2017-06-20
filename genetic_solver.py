@@ -112,21 +112,6 @@ class Trip:
         return to_string
 
 
-class InOut:
-    def __init__(self, in_=0, out_=0):
-        self.in_ = in_
-        self.out_ = out_
-
-    def add_in(self, value):
-        self.in_ += value
-
-    def add_out(self, value):
-        self.out_ += value
-
-    def __str__(self):
-        return 'INOUT (' + str(self.in_) + ', ' + str(self.out_) + ')'
-
-
 class Candidate:
     def __init__(self, day_list, fitness_=None):
         # ctor
@@ -259,7 +244,8 @@ class Candidate:
 
                     req_deliver_customer_id = problem_instance['requests'][req_deliver_id].customer_id
                     req_deliver_num_tools   = problem_instance['requests'][req_deliver_id].num_tools
-                    fetch_counter = 0
+                    fetch_counter            = 0
+                    successful_fetch_counter = 0
 
                     # we start at the depot
                     route = []
@@ -315,7 +301,7 @@ class Candidate:
                             tmp_route = route.copy()
 
                             # add the (CUSTOMER_ID, REQUEST_ID) tuples to the tmp route
-                            if fetch_counter > 0:
+                            if successful_fetch_counter > 0:
                                 # pretty stupid fix
                                 # but otherwise we would append the delivery and depot each time
                                 # that we append a new fetch
@@ -335,12 +321,13 @@ class Candidate:
                                 critical_requests_fetch.remove(fetch_req_id)
                                 route = tmp_route
                                 tools_returned_to_depot = tmp_route[-1].num_tools
+                                successful_fetch_counter += 1
 
                                 # if we found some route that fetches more than delivers,
                                 # we're just gonna stop building up this route
                                 if tools_returned_to_depot >= 0:
-                                    # TODO we could try to add another delivery request and re-do the sorted_requests loop
-                                    #      though this probably won't make much sense for 1 or 2 tools
+                                    # TODO we could try to add another delivery request and re-do the sorted_requests
+                                    #      loop though this probably won't make much sense for 1 or 2 tools
                                     #      we might need to define some border at which this behaviour gets triggered
                                     break
 
@@ -500,7 +487,7 @@ class Candidate:
                sum_tool_costs
 
     def mutate(self):
-        """Perform a random mutation
+        """Perform a random mutation on the current candidate.
 
         :return:
         """
@@ -537,20 +524,26 @@ class Candidate:
 
             #print(self.day_list)
 
-
     def find_start_day_of_request(self, request_id, first_day, last_day):
+        """Find the chosen start day of the request for this candidate.
+
+        :param request_id: The ID of the request whose chosen start day to find
+        :param first_day: The first possible start day of the request as per problem instance
+        :param last_day: The last possible start day of the request as per problem instance
+        :return: The index of the day on which the start was fixed or -1
+        """
         for day_idx in range(first_day, last_day + 1):
             if request_id in self.day_list:
                 return day_idx
 
         return -1
 
-
     def get_extended_daylist(self):
-        """
-        create day_list of length days, where all the currently running requests
-        (=the tools are at the customer's place)are included
-        :return:
+        """Create the extended day-list of the candidate.
+
+        Creates a list of length NUMBER_DAYS, where every element is a dictionary {REQUEST_ID: REQUEST_STATE}.
+        This extends the normal day-list by adding {REQUEST_ID: "running"} entries between start and end days.
+        :return: The extended day-list
         """
         new_daylist = [{} for _ in range(problem_instance['days'])]
         for (day_idx, requests_on_day) in enumerate(self.day_list):
@@ -565,115 +558,18 @@ class Candidate:
 
         return new_daylist
 
-
-    # TODO REMOVE ME!
     def repair(self):
-        usages = self.get_tool_usages()
-        print("\nusages:", usages)
+        """Repair the Candidate's request schedule.
 
-        # create an extended datastructure from day_list, with all the tools currently at the customer's place
-        extended_daylist = self.get_extended_daylist()
+        Checks if there are any violations of the maximum AVAILABLE number of tools due to peaks in requests.
+        If that is the case, it tries to move the requests around, such that there are no longer any violations
+        of the maximum available number.
 
-        # loop over each tool, and look for problems. This approach works, because the tools don't interfere with each other
-        for (tool_id, usage_on_day) in usages.items():
-
-            # get the largest peak and its day + the max available for the tool
-            print("repair() tool: " + str(tool_id) + ", usage_on_day: " + str(usage_on_day))
-            largest_peak_day, largest_peak = max(enumerate(usage_on_day), key=lambda p: p[1])
-            available = problem_instance['tools'][tool_id].num_available
-
-            # while the largest peak is greater than allowed, reduce it!
-            while largest_peak > available:
-                print("largest_peak: " + str(largest_peak))
-                # get all the requests from this day and this tool.
-                request_list = {req_id: req_status for (req_id, req_status) in
-                                extended_daylist[largest_peak_day].items()
-                                if
-                                (problem_instance['requests'][req_id].tool_id == tool_id) and (req_status != 'fetch')}
-                # and sort them by num_tools descending
-                request_list = sorted(request_list.items(),
-                                      key=lambda x: problem_instance['requests'][x[0]].num_tools, reverse=True)
-
-                # print("sorted request list" + str(request_list))
-
-                # try to move a tool of the request_list, accept the movement, if we reduce the largest peak
-                for (req_id, req_status) in request_list:
-
-                    possible_moves_for_request = choose_request_to_move(largest_peak_day, req_id)
-                    successful_move = len(possible_moves_for_request) != 0
-
-                    print("request_id: " + str(req_id) + ", possible_moves: " + str(possible_moves_for_request) + "\n")
-                    # print(successful_move)
-
-                    for possible_start_day in possible_moves_for_request:
-                        request_length = problem_instance['requests'][req_id].num_days
-                        first_day = problem_instance['requests'][req_id].first_day
-                        last_day = problem_instance['requests'][req_id].last_day
-                        num_tools = problem_instance['requests'][req_id].num_tools
-                        old_start_day = self.find_start_day_of_request(req_id, first_day, last_day)
-
-                        # check the days, which have changed (= days between new start day and old start day
-                        # and old end day and new end day)
-                        # if there is no larger peak, then our move is successful
-                        successful_move = True
-                        for day_idx in range(first_day, last_day + 1):
-                            if (day_idx != largest_peak_day) and \
-                                    (((day_idx >= possible_start_day) and (day_idx < old_start_day)) or
-                                         ((day_idx > old_start_day + request_length) and
-                                              (day_idx <= possible_start_day + request_length))):
-
-                                if usage_on_day[day_idx] + num_tools > largest_peak:
-                                    successful_move = False
-                                    break
-
-                        if successful_move:
-                            self.persist_successful_move(first_day, last_day, extended_daylist, req_id,
-                                                         possible_start_day, request_length)
-                            break
-
-                    if successful_move:
-                        break
-
-                if not successful_move:
-                    print("greedy repair did not work!")
-                    return
-
-
-                    # TODO could update usages manually => performance
-                usages = self.get_tool_usages()
-                largest_peak_day, largest_peak = max(enumerate(usages[tool_id]), key=lambda p: p[1])
-
-
-    # TODO REMOVE ME
-    def persist_successful_move(self, first_day, last_day, extended_daylist, req_id, possible_start_day,
-                                request_length):
-        # change self.day_list and extended_daylist
-        active = False
-        for day_idx in range(first_day, last_day + 1):
-            # first, remove the entries
-            self.day_list[day_idx].pop(req_id, None)
-            extended_daylist[day_idx].pop(req_id, None)
-
-            # we are between start day and end day
-            if active:
-                extended_daylist[day_idx][req_id] = 'running'
-
-            # we are on the start day
-            if day_idx == possible_start_day:
-                extended_daylist[day_idx][req_id] = 'deliver'
-                self.day_list[day_idx][req_id] = 'deliver'
-                active = True
-
-            # we are on the end day
-            if day_idx == possible_start_day + request_length:
-                extended_daylist[day_idx][req_id] = 'fetch'
-                self.day_list[day_idx][req_id] = 'fetch'
-                active = False
-
-    def repair2(self):
-        # TODO remove me! => just for debugging
-        # self.smallest_peak = {k: 10000000000 for k, v in problem_instance['tools'].items()}
-
+        If this is possible or there haven't been any violations in the first place, the valid field of the
+        Candidate is set to True.
+        Otherwise, the valid field of the Candidate is set to False.
+        :return: nothing
+        """
         usages = self.get_tool_usages()
         extended_day_list = self.get_extended_daylist()
 
@@ -713,7 +609,7 @@ class Candidate:
             max_depth = PARAMETERS['max_depth_start']
             while True:
                 #print("max_depth:", max_depth)
-                repair_result = self.rec_repair2(start_day_dict, extended_day_list, 0, max_depth)
+                repair_result = self.rec_repair(start_day_dict, extended_day_list, 0, max_depth)
 
                 if repair_result is None:
                     if max_depth < PARAMETERS['max_depth']:
@@ -737,13 +633,16 @@ class Candidate:
                     self.day_list = new_day_list
                     break
 
+    def rec_repair(self, move_dict, current_extended_daylist, depth, max_depth):
+        """The recursive part of the repair.
 
-    def rec_repair2(self, move_dict, current_extended_daylist, depth, max_depth):
-        """
-
-        :param move_dict:
-        :param current_extended_daylist:
-        :return:
+        This function keeps track of the recursion depth used and will return None, if the maximum depth has been
+        exceeded.
+        :param move_dict: The dictionary containing the not-yet-tried moves per request
+        :param current_extended_daylist: The extended day-list on which to base the movements
+        :param depth: The current depth of the iteration
+        :param max_depth: The maximum depth of the iteration
+        :return: The extended day-list representing a fix, or None if no such day-list could be found
         """
 
         chosen_request = None
@@ -754,7 +653,7 @@ class Candidate:
 
         for req_id in move_dict:
             # if the list of possible start days is not empty...
-            if move_dict[req_id]: #if not empty
+            if move_dict[req_id]:
                 tmp_request = problem_instance["requests"][req_id]
                 if tmp_request.num_tools > max_impact:
                     max_impact = tmp_request.num_tools
@@ -771,8 +670,6 @@ class Candidate:
 
         # look at all the possible positions for the chosen request
         for position in move_dict[chosen_request.id]:
-            #print("depth, chosen request, chosen position:", depth, chosen_request, position)
-            #print("move dict:", move_dict, "\n")
             tmp_ext_daylist = current_extended_daylist.copy()
             start_day = position
             end_day = position + chosen_request.num_days
@@ -794,18 +691,13 @@ class Candidate:
             tmp_usages = tool_usages_from_extended_daylist(tmp_ext_daylist)[tool_id]
             new_peak = max(tmp_usages)
 
-            # TODO remove me => debugging
-            #if new_peak < self.smallest_peak[tool_id]:
-                #self.smallest_peak[tool_id] = new_peak
-            #print("new peak, max_available, smallest_peak:", new_peak, tool_availability, self.smallest_peak[tool_id])
-
             # if this move fixed the peak, let's return the extended day list that fixed the problem
             if new_peak <= tool_availability:
                 return tmp_ext_daylist
 
             # if we haven't repaired the problem at this stage, let's try to go deeper
             if depth < max_depth:
-                deeper_result = self.rec_repair2(next_move_dict, tmp_ext_daylist, depth+1, max_depth)
+                deeper_result = self.rec_repair(next_move_dict, tmp_ext_daylist, depth + 1, max_depth)
                 if deeper_result is not None:
                     return deeper_result
 
@@ -814,6 +706,15 @@ class Candidate:
 
 
 def translate(value, left_min, left_max, right_min, right_max):
+    """
+
+    :param value:
+    :param left_min:
+    :param left_max:
+    :param right_min:
+    :param right_max:
+    :return:
+    """
     # Figure out how 'wide' each range is
     left_span = left_max - left_min
     right_span = right_max - right_min
@@ -831,11 +732,21 @@ def translate(value, left_min, left_max, right_min, right_max):
     return right_min + (value_scaled * right_span)
 
 
-def is_route_valid(tmp_route):
+def is_route_valid(route):
+    """Check if the route is valid.
+
+    Check the supplied route against several limits, such as maximum driving distance and vehicle capacity.
+    It is assumed that the first and last StopOver in the route are the depot.
+    The first and last StopOver's num_tools fields may be altered in order to reflect if the route
+    requires some tools to be picked up from the depot at the beginning or some tools are dropped off
+    at the depot at the end of the trip.
+    :param route: The route (i.e. list of StopOvers) to check
+    :return: True if the route is valid, False otherwise
+    """
     sum_distance = 0
     loaded = 0
     max_load = 0
-    for (idx, stopover) in enumerate(tmp_route):
+    for (idx, stopover) in enumerate(route):
         customer_id   = stopover.customer_id
         request_id    = stopover.request_id
         change_amount = stopover.num_tools
@@ -843,7 +754,7 @@ def is_route_valid(tmp_route):
         if idx == 0:
             continue
 
-        last_customer_id = tmp_route[idx-1].customer_id
+        last_customer_id = route[idx-1].customer_id
         sum_distance += problem_instance['distance'][last_customer_id][customer_id]
 
         loaded += change_amount
@@ -866,10 +777,10 @@ def is_route_valid(tmp_route):
             #print("CAPACITY THROUGH DEPOT LOADING FUCKED")
             return False
 
-        tmp_route[0].num_tools = depot_load
+        route[0].num_tools = depot_load
 
     elif loaded > 0:
-        tmp_route[-1].num_tools = -loaded
+        route[-1].num_tools = -loaded
 
     return True
 
@@ -881,8 +792,8 @@ def tool_usages_from_extended_daylist(ext_day_list):
     The value list has one entry per day of the problem and the entry's value equals to the amount of tools
     required at this day as per optimistic maximum
     (i.e. tools still at a customer's place + tools requested - tools returned)
-    :param ext_day_list:
-    :return:
+    :param ext_day_list: The extended day-list to calculate the daily uses from
+    :return: The usage dictionary in form of {TOOL_ID: [LIST_OF_USES_PER_DAY]}
     """
     usage = {}
     for tool_id in problem_instance["tools"]:
@@ -909,31 +820,6 @@ def tool_usages_from_extended_daylist(ext_day_list):
     return usage
 
 
-def choose_request_to_move(largest_peak_day, req_id):
-    """ for a certain tool id, find possible movements of requests to move them away from the peak day.
-    :param largest_peak_day:
-    :param req_id:
-    :return: a list with all possible movements of a request, to move the request out of the way of the largest peak day
-    """
-    possible_start_days = []
-
-    # loop over possible start days
-    request_length = problem_instance['requests'][req_id].num_days
-    first_day = problem_instance['requests'][req_id].first_day
-    last_day = problem_instance['requests'][req_id].last_day
-    #print("choose_req_to_move() first_day: " + str(first_day) + ", last_day: " + str(last_day))
-
-    # check if we could move the request, so that the tools are not at the customer at the collision day.
-    for day in range(first_day, last_day + 1):
-
-        #print("day:", day, "dar+req_len:", day + request_length, "largest_peak_day:", largest_peak_day)
-        # to not collide with the peak-day, the request has to either end before or start after the collision day
-        if ((day + request_length) < largest_peak_day) or (day > largest_peak_day):
-            possible_start_days.append(day)
-
-    return possible_start_days
-
-
 def initial_population(population_size):
     """Create the initial population for the genetic algorithm
 
@@ -954,7 +840,7 @@ def initial_population(population_size):
 
         candidate = Candidate(day_list)
         # print(candidate.get_tool_usages())
-        candidate.repair2()
+        candidate.repair()
         if not candidate.valid:  # we need to create an additional candidate
             continue
 
@@ -994,7 +880,7 @@ def combine(a, b):
                 break
 
     new_candidate = Candidate(new_day_list)
-    new_candidate.repair2()  # repair the candidate
+    new_candidate.repair()  # repair the candidate
     fit_ = new_candidate.fitness_heuristic()
     new_candidate.fit = fit_
     return new_candidate
