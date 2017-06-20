@@ -26,7 +26,7 @@ class Trip:
     def __init__(self):
         self.trip_distance_wo_last_stop = 0  # distance of this trip without the distance to the depot at the end
         self.stopovers = [StopOver(0, 0, 0)]  # list of requests the trip contains (0 = depot)
-        self.used_tools_per_stop = {tool_id: [0] for (tool_id, tool) in problem_instance['tools'].items()}
+        self.loaded_tools_per_stop = {tool_id: [0] for (tool_id, tool) in problem_instance['tools'].items()}
 
     def convert_from_stopovers(self, stopovers):
         #print("convert_from_stopovers")
@@ -50,53 +50,64 @@ class Trip:
 
         # 2. sum up all the used tools and check if the distance is ok
         stopover_tool_id = problem_instance['requests'][stopover.request_id].tool_id
-        new_num_tools = self.used_tools_per_stop.copy()
+        new_loaded_tools_per_stop = self.loaded_tools_per_stop.copy()
 
-        # if the new request is a fetch request, we only have to look at the changes of today
+        # if the new request is a fetch request, we only have to look at the changes of this stopover
         if stopover.num_tools < 0:
             sum_load = 0
-            for (tool_id, usages) in new_num_tools.items():  # add a new day to usages list
-                to_add = usages[-1]
+            for (tool_id, usages) in new_loaded_tools_per_stop.items():  # add a new stopover to usages list
+                to_add = usages[-1]  # copy the amount of the last stopover
                 if tool_id == stopover_tool_id:
                     to_add += abs(stopover.num_tools)
+
                 usages.append(to_add)
                 sum_load += to_add * problem_instance['tools'][tool_id].size
+
             if sum_load > problem_instance['capacity']:
                 #print("exceeded capacity (fetch)")
                 return False
 
         # if the new request is a deliver request (and we have to load new tools at the depot),
-        #    we have to look at all the past days
+        #    we have to look at all the past stopovers
         else:
-            tools_loaded = new_num_tools[stopover_tool_id][-1]
+            tools_loaded = new_loaded_tools_per_stop[stopover_tool_id][-1]
             to_add = stopover.num_tools - tools_loaded
-            if to_add < 0:
+            if to_add <= 0:
                 to_add = 0  # we have enough tools loaded, so we do not need to load more tools!
 
             # update the past days, if we had to load something at the depot
             if to_add > 0:
                 for stopover_idx in range(len(self.stopovers)):  # loop over all days
-                    new_num_tools[stopover_tool_id][stopover_idx] += to_add
+                    new_loaded_tools_per_stop[stopover_tool_id][stopover_idx] += to_add
 
-            for (tool_id, usages) in new_num_tools.items():  # add a new day to usages list
-                usages.append(usages[-1])
+            for (tool_id, usages) in new_loaded_tools_per_stop.items():  # add a new day to usages list
                 if tool_id == stopover_tool_id:  # now we have to deliver the tools
                     usages.append(usages[-1] - stopover.num_tools)
+                else:
+                    usages.append(usages[-1])
 
-            # if we had to add tools at the depot, we have to check the capacity of the past days
+            # if we had to add tools at the depot, we have to check the capacity of the past stopovers
             if to_add > 0:
                 for stopover_idx in range(len(self.stopovers) + 1):  # loop over all days (+1, since we added a new one)
                     sum_load = 0
-                    for (tool_id, usages) in new_num_tools.items():
+                    for (tool_id, usages) in new_loaded_tools_per_stop.items():
                         sum_load += usages[stopover_idx] * problem_instance['tools'][tool_id].size
                     if sum_load > problem_instance['capacity']:
                         #print("exceeded capacity (deliver)")
                         return False
 
+        # TODO REMOVE ME
+        for stopover_idx in range(len(self.stopovers) + 1):
+            sum_ = 0
+            for (tool_id, usages) in new_loaded_tools_per_stop.items():
+                sum_ += usages[stopover_idx] * problem_instance['tools'][tool_id].size
+            if sum_ > problem_instance['capacity']:
+                print("UNDETECTED CAPACITY PROBLEM!")
+
         # 3. if we get here, we can add the new stop, and update the trip distance and the used tools
         self.stopovers.append(stopover)
         self.trip_distance_wo_last_stop += distance_to_stopover
-        self.used_tools_per_stop = new_num_tools
+        self.loaded_tools_per_stop = new_loaded_tools_per_stop
         return True
 
     def finalize(self):
@@ -108,7 +119,7 @@ class Trip:
         self.stopovers.append(StopOver(0, 0, 0))
 
         # update tool usages for the last day
-        for (tool_id, usages) in self.used_tools_per_stop.items():
+        for (tool_id, usages) in self.loaded_tools_per_stop.items():
             usages.append(usages[-1])
 
     def __str__(self):
@@ -400,7 +411,7 @@ class Candidate:
                 # tools we "wasted" (i.e. brought to the depot without further using them)
                 unused_tools = 0
                 for trip in trips_today:
-                    unused_tools += trip.used_tools_per_stop[critical_tool_id][-1]
+                    unused_tools += trip.loaded_tools_per_stop[critical_tool_id][-1]
 
                 available = problem_instance["tools"][critical_tool_id].num_available
                 opt_max = usages[critical_tool_id][day_index]['min']
@@ -488,7 +499,7 @@ class Candidate:
                 for trip in car:
                     for (tool_id, _) in problem_instance['tools'].items():
                         # add all the stuff we load at the depot (first stop)
-                        tools_loaded_at_depot = trip.used_tools_per_stop[tool_id][0]
+                        tools_loaded_at_depot = trip.loaded_tools_per_stop[tool_id][0]
                         max_tools_used_on_day[tool_id] = tools_loaded_at_depot
 
                     sum_distance += trip.distance
