@@ -486,6 +486,7 @@ class Candidate:
             sum_tool_costs += max_amount * problem_instance['tools'][tool_id].cost
 
         self.cars_on_day = cars_on_day
+        print(cars_on_day)
 
         return max_cars     * problem_instance['vehicle_cost']     + \
                sum_cars     * problem_instance['vehicle_day_cost'] + \
