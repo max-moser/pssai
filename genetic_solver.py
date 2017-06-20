@@ -313,9 +313,9 @@ class Candidate:
                                 tmp_route.pop()
                                 tmp_route.pop()
 
-                            neg_deliver_num_tools = (-1) * abs(req_deliver_num_tools)
-                            tmp_route.append(StopOver(fetch_customer_id, fetch_req_id, fetch_num_tools))
-                            tmp_route.append(StopOver(req_deliver_customer_id, req_deliver_id, neg_deliver_num_tools))
+                            neg_fetch_num_tools = (-1) * abs(fetch_num_tools)
+                            tmp_route.append(StopOver(fetch_customer_id, fetch_req_id, neg_fetch_num_tools))
+                            tmp_route.append(StopOver(req_deliver_customer_id, req_deliver_id, req_deliver_num_tools))
                             tmp_route.append(StopOver(0, 0, 0))
 
                             fetch_counter += 1
@@ -339,8 +339,7 @@ class Candidate:
                     if fetch_counter <= 0:
                         # if there weren't any fetch requests left, we're just gonna
                         # try to deliver and return to depot
-                        neg_deliver_num_tools = (-1) * abs(req_deliver_num_tools)
-                        route.append(StopOver(req_deliver_customer_id, req_deliver_id, neg_deliver_num_tools))
+                        route.append(StopOver(req_deliver_customer_id, req_deliver_id, req_deliver_num_tools))
                         route.append(StopOver(0, 0, 0))
 
                     #print("PRE:", [str(so) for so in route], end="\n")
@@ -363,8 +362,10 @@ class Candidate:
                         # TODO could have made better use of them with a nearest neighbour
                         crit_fetch_req = problem_instance["requests"][req_fetch_crit_id]
                         route = []
+
+                        neg_fetch_req_num_tools = abs(crit_fetch_req.num_tools) * (-1)
                         route.append(StopOver(0, 0, 0))
-                        route.append(StopOver(crit_fetch_req.customer_id, crit_fetch_req.id, crit_fetch_req.num_tools))
+                        route.append(StopOver(crit_fetch_req.customer_id, crit_fetch_req.id, neg_fetch_req_num_tools))
                         route.append(StopOver(0, 0, 0))
 
                         route_valid = is_route_valid(route)
@@ -766,7 +767,11 @@ def is_route_valid(route):
         last_customer_id = route[idx-1].customer_id
         sum_distance += problem_instance['distance'][last_customer_id][customer_id]
 
-        loaded += change_amount
+        # change amount is subtracted because we use negative numbers to
+        # indicate FETCH requests (which is where tools get loaded)
+        # and positive numbers to indicate DELIVER requests (which is where
+        # we lower the amount of loaded tools)
+        loaded -= change_amount
 
         if loaded > problem_instance["capacity"]:
             #print("CAPACITY.")
@@ -778,18 +783,18 @@ def is_route_valid(route):
         max_load = max(max_load, loaded)
 
     if loaded < 0:
-        depot_load = abs(loaded)
+        depot_load = loaded
 
         # if we need to fetch something at the depot already,
         # we have to take into account that we are
-        if (max_load + depot_load) > problem_instance["capacity"]:
+        if (max_load + abs(depot_load)) > problem_instance["capacity"]:
             #print("CAPACITY THROUGH DEPOT LOADING FUCKED")
             return False
 
         route[0].num_tools = depot_load
 
     elif loaded > 0:
-        route[-1].num_tools = -loaded
+        route[-1].num_tools = loaded
 
     return True
 
@@ -862,6 +867,7 @@ def initial_population(population_size):
         # print(candidate.get_extended_daylist())
         population.append(candidate)
         i += 1
+        print("Found the {}. candidate!".format(i))
     return population
 
 
@@ -978,7 +984,7 @@ def solve_problem(problem):
     # print("\n", new_candidate)
 
     for i in range(0, PARAMETERS['number_of_generations']):
-        debug_print('\nIteration: =====' + str(i) + '=======')
+        debug_print('\nIteration: =======' + str(i) + '=======')
 
         population_sorted = sorted(population, key=lambda p: p.fit)
         highest_fitness = population_sorted[-1:][0].fit
