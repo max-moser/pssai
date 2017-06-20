@@ -322,8 +322,9 @@ class Candidate:
                                 tmp_route.pop()
                                 tmp_route.pop()
 
+                            neg_deliver_num_tools = (-1) * abs(req_deliver_num_tools)
                             tmp_route.append(StopOver(fetch_customer_id, fetch_req_id, fetch_num_tools))
-                            tmp_route.append(StopOver(req_deliver_customer_id, req_deliver_id, req_deliver_num_tools))
+                            tmp_route.append(StopOver(req_deliver_customer_id, req_deliver_id, neg_deliver_num_tools))
                             tmp_route.append(StopOver(0, 0, 0))
 
                             fetch_counter += 1
@@ -346,7 +347,8 @@ class Candidate:
                     if fetch_counter <= 0:
                         # if there weren't any fetch requests left, we're just gonna
                         # try to deliver and return to depot
-                        route.append(StopOver(req_deliver_customer_id, req_deliver_id, req_deliver_num_tools))
+                        neg_deliver_num_tools = (-1) * abs(req_deliver_num_tools)
+                        route.append(StopOver(req_deliver_customer_id, req_deliver_id, neg_deliver_num_tools))
                         route.append(StopOver(0, 0, 0))
 
                     #print("PRE:", [str(so) for so in route], end="\n")
@@ -364,9 +366,22 @@ class Candidate:
                 # but there were some fetch requests that were not yet used
                 # so we'll just try to do a NN with them
                 if critical_requests_fetch:
-                    pass
-                    # TODO there are still some fetches left
-                    #      so we have to do something with them
+                    for req_fetch_crit_id in critical_requests_fetch:
+                        # TODO it's a shame how these fetch requests go to waste
+                        # TODO could have made better use of them with a nearest neighbour
+                        crit_fetch_req = problem_instance["requests"][req_fetch_crit_id]
+                        route = []
+                        route.append(StopOver(0, 0, 0))
+                        route.append(StopOver(crit_fetch_req.customer_id, crit_fetch_req.id, crit_fetch_req.num_tools))
+                        route.append(StopOver(0, 0, 0))
+
+                        route_valid = is_route_valid(route)
+                        if route_valid:
+                            trips_today.append(route)
+                        else:
+                            print("For some reason, could not fulfill the single fetch")
+                            self.valid = False
+                            return -1
 
                 # after we have allocated all requests on that day, let's sum up how many
                 # tools we "wasted" (i.e. brought to the depot without further using them)
@@ -374,8 +389,11 @@ class Candidate:
                 for trip in trips_today:
                     unused_tools += trip[-1].num_tools
 
-                if unused_tools > wiggle_room:
-                    #print("THE WIGGLE ROOM WAS EXHAUSTED")
+                available = problem_instance["tools"][critical_tool_id].num_available
+                opt_max = usages[critical_tool_id][day_index]['min']
+                actual_usage = unused_tools + opt_max
+                if actual_usage > available:
+                    print("THE WIGGLE ROOM WAS EXHAUSTED")
                     self.valid = False
                     return -1
 
