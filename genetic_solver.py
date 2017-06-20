@@ -962,7 +962,7 @@ def initial_population(population_size):
         if fit_ == -1:
             continue # candidate is not valid
 
-        print("Fitness is: ", fit_)
+        #print("Fitness is: ", fit_)
         candidate.fit = fit_
         # print(candidate.get_extended_daylist())
         population.append(candidate)
@@ -1044,7 +1044,7 @@ def get_random_candidate(values, scale):
             return v
 
 
-def make_fitness_range(values):
+def make_fitness_range(values, highest_fitness, lowest_fitness):
     """Create a list containing triples of the form (LOWER, UPPER, ELEMENT)
 
     :param values:
@@ -1054,8 +1054,10 @@ def make_fitness_range(values):
     upper = 0
 
     for elem in values:
+        # we want that elems with a smaller fitness have a higher chance to be chosen for combination!
+        inverted_fitness = lowest_fitness + (highest_fitness - elem.fit)
         lower = upper
-        upper = lower + elem.fit
+        upper = lower + inverted_fitness
         great_range.append((lower, upper, elem))
 
     return great_range
@@ -1085,8 +1087,12 @@ def solve_problem(problem):
         sum_fitness_values = sum(p.fit for p in population)
         debug_print("sum fitness values:", sum_fitness_values)
 
-        fitness_range = make_fitness_range(population)
-        debug_print("fitness range:", fitness_range)
+        population_sorted = sorted(population, key=lambda p: p.fit)
+        highest_fitness = population_sorted[-1:][0].fit
+        lowest_fitness  = population_sorted[0].fit
+
+        fitness_range = make_fitness_range(population, highest_fitness, lowest_fitness)
+        #debug_print("fitness range:", fitness_range)
 
         # create new population through crossover
         new_population = []
@@ -1105,7 +1111,7 @@ def solve_problem(problem):
 
             # TODO can this still happen often enough?
             if new_candidate in population:  # we need to generate an additional candidate
-                debug_print('WHAT IS HAPPENING')
+                debug_print('COMBINATION YIELDED CANDIDATE ALREADY IN POPULATION, IGNORING THIS NEW CANDIDATE')
                 continue
 
             # debug_print('1: ', str(one))
@@ -1114,20 +1120,17 @@ def solve_problem(problem):
             new_population.append(new_candidate)
             num_new_candidates += 1
 
-        debug_print("new_population size b4 insert pop size:", len(new_population))
-        # select survivors (the best ones survive)
-
+        # select survivors (the best ones survive => the ones with the lowest fitness)
         population = sorted(population, key=lambda p: p.fit)
-        population = population[-PARAMETERS['survivor_size']:]
-        debug_print("population size to insert:", len(population))
+        population = population[:PARAMETERS['survivor_size']]
 
         new_population.extend(population)
         population = new_population
-        debug_print("new_population size:", len(new_population))
 
         # debug_print('Population after mutation: ' + str([str(p) for p in population]))
-        debug_print('Best: ' + str(population[-1:][0]))
-        debug_print('Worst: ' + str(population[0]))
+        population = sorted(population, key=lambda p: p.fit)
+        debug_print('Best  fitness: ', new_population[-1].fit)
+        debug_print('Worst fitness: ', new_population[0] .fit)
 
     end = datetime.datetime.now()
     print('Done: ' + end.isoformat())
