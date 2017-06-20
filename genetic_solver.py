@@ -23,11 +23,17 @@ class StopOver:
 
 
 class Trip:
-    def __init__(self, previous_trips_distance=0):
-        self.previous_trips_distance = previous_trips_distance  # distance from past trips of the same car
+    def __init__(self):
         self.trip_distance_wo_last_stop = 0  # distance of this trip without the distance to the depot at the end
         self.stopovers = [StopOver(0, 0, 0)]  # list of requests the trip contains (0 = depot)
         self.used_tools_per_stop = {tool_id: [0] for (tool_id, tool) in problem_instance['tools'].items()}
+
+    def convert_from_stopovers(self, stopovers):
+        #print("convert_from_stopovers")
+        for (day_idx, stopover) in enumerate(stopovers):
+            if (day_idx != 0) and (day_idx != len(stopovers) - 1):  # do not add the depot at the start and the end
+                self.try_add(stopover)
+        self.finalize()
 
     def try_add(self, stopover):
         #print("try_add", stopover)
@@ -35,7 +41,7 @@ class Trip:
         # 1. sum up the distance with the additional stopover
         distance_to_stopover = problem_instance['distance'][self.stopovers[-1].customer_id][stopover.customer_id]
         distance_to_depot    = problem_instance['distance'][stopover.customer_id]          [0]
-        sum_distances = self.previous_trips_distance + self.trip_distance_wo_last_stop + distance_to_stopover + distance_to_depot
+        sum_distances = self.trip_distance_wo_last_stop + distance_to_stopover + distance_to_depot
 
         # check if the distance is ok
         if sum_distances > problem_instance['max_trip_distance']:
@@ -54,7 +60,7 @@ class Trip:
                 if tool_id == stopover_tool_id:
                     to_add += abs(stopover.num_tools)
                 usages.append(to_add)
-                sum_load += to_add
+                sum_load += to_add * problem_instance['tools'][tool_id].size
             if sum_load > problem_instance['capacity']:
                 #print("exceeded capacity (fetch)")
                 return False
@@ -82,7 +88,7 @@ class Trip:
                 for stopover_idx in range(len(self.stopovers) + 1):  # loop over all days (+1, since we added a new one)
                     sum_load = 0
                     for (tool_id, usages) in new_num_tools.items():
-                        sum_load += usages[stopover_idx]
+                        sum_load += usages[stopover_idx] * problem_instance['tools'][tool_id].size
                     if sum_load > problem_instance['capacity']:
                         #print("exceeded capacity (deliver)")
                         return False
@@ -356,7 +362,9 @@ class Candidate:
                     route_valid = is_route_valid(route, critical_tool_id)
                     # print("POST:", [str(so) for so in route], end="\n\n")
                     if route_valid:
-                        trips_today.append(route)
+                        trip = Trip()
+                        trip.convert_from_stopovers(route)
+                        trips_today.append(trip)
                     else:
                         # at this point, I think we should just cancel this thing
                         #print("THE ROUTE SEEMS TO BE INVALID?")
@@ -380,7 +388,9 @@ class Candidate:
 
                         route_valid = is_route_valid(route, critical_tool_id)
                         if route_valid:
-                            trips_today.append(route)
+                            trip = Trip()
+                            trip.convert_from_stopovers(route)
+                            trips_today.append(trip)
                         else:
                             print("For some reason, could not fulfill the single fetch")
                             self.valid = False
@@ -390,7 +400,7 @@ class Candidate:
                 # tools we "wasted" (i.e. brought to the depot without further using them)
                 unused_tools = 0
                 for trip in trips_today:
-                    unused_tools += trip[-1].num_tools
+                    unused_tools += trip.used_tools_per_stop[critical_tool_id][-1]
 
                 available = problem_instance["tools"][critical_tool_id].num_available
                 opt_max = usages[critical_tool_id][day_index]['min']
@@ -406,7 +416,6 @@ class Candidate:
             non_critical_requests = {req_id: req_status for (req_id, req_status) in requests_on_day.items()
                                         if problem_instance['requests'][req_id].tool_id not in critical_tools}
 
-            trips_today = []
             current_trip = Trip()
             # just loop while we still have requests to to
             while non_critical_requests:
@@ -442,6 +451,7 @@ class Candidate:
             car_idx = 0
             sum_distance_car = 0
             cars = [[]]  # list of cars with list of trips inside
+            #print(trips_today)
             for trip in trips_today:
                 if (sum_distance_car + trip.distance) > problem_instance['max_trip_distance']:
                     cars.append([])
@@ -499,6 +509,7 @@ class Candidate:
             sum_tool_costs += max_amount * problem_instance['tools'][tool_id].cost
 
         self.cars_on_day = cars_on_day
+        #print(cars_on_day)
 
         return max_cars     * problem_instance['vehicle_cost']     + \
                sum_cars     * problem_instance['vehicle_day_cost'] + \

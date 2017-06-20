@@ -138,7 +138,7 @@ def main(argv=None):
     candidate_solutions = genetic_solver.solve_problem(problem)
     # sorted_solutions = sorted(candidate_solutions, key=lambda sol: sol.fit)
     best_solution = min(candidate_solutions, key=lambda sol: sol.fit)
-    output_parser.create_output_file(problem, best_solution, "output.txt")
+    output_parser.create_output_file(problem, best_solution, args.file)
 
 def get_value_from_line(line):
     return line.split('=', 1)[1].strip()
