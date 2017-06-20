@@ -18,6 +18,9 @@ class StopOver:
         self.request_id = request_id
         self.num_tools = num_tools  # negative num_tools = fetch request, positive num_tools = deliver request
 
+    def __str__(self):
+        return "StopOver: (" + str(self.customer_id) + ", " + str(self.request_id) + ", " + str(self.num_tools) + ")"
+
 
 class Trip:
     def __init__(self, used_capacity=0):
@@ -28,8 +31,8 @@ class Trip:
 
     def try_add(self, stopover):
         # 1. sum up the distance with the additional stopover
-        distance_to_stopover = problem_instance['distance_matrix'][self.stopovers[-1].customer_id][stopover.customer_id]
-        distance_to_depot    = problem_instance['distance_matrix'][stopover.customer_id]          [0]
+        distance_to_stopover = problem_instance['distance'][self.stopovers[-1].customer_id][stopover.customer_id]
+        distance_to_depot    = problem_instance['distance'][stopover.customer_id]          [0]
         sum_distances = self.previous_trips_distance + self.trip_distance_wo_last_stop + distance_to_stopover + distance_to_depot
 
         # check if the distance is ok
@@ -50,7 +53,9 @@ class Trip:
             for (tool_id, usages) in self.used_tools_per_stop.items():
                 sum_load = stopover.num_tools
                 for stopover_idx in range(len(self.stopovers)):
-                    sum_load += usages[stopover_idx].num_tools
+                    # FIXME removed: (...).num_tools
+                    # FIXME from     sum_load += usages[stopover_idx].num_tools
+                    sum_load += usages[stopover_idx]
                 if sum_load > problem_instance['capacity']:
                     return False
 
@@ -59,11 +64,22 @@ class Trip:
         self.trip_distance_wo_last_stop += distance_to_stopover
 
         request_tool_id = problem_instance['requests'][stopover.request_id].tool_id
+
+        # FIXME is this the way to go?
+        self.used_tools_per_stop[request_tool_id].append(0)
+
         if stopover.num_tools < 0:
             self.used_tools_per_stop[request_tool_id][-1] += abs(stopover.num_tools)
         else:
+            # FIXME remove print/input
+            print(self.used_tools_per_stop)
+            print([str(so) for so in self.stopovers])
+            input("yeah")
             for stopover_idx in range(len(self.stopovers)):
-                self.used_tools_per_stop[request_tool_id] += stopover.num_tools
+                # FIXME remove print/input
+                print(self.used_tools_per_stop[request_tool_id])
+                input("woo")
+                self.used_tools_per_stop[request_tool_id][stopover_idx] += stopover.num_tools
 
         return True
 
@@ -73,7 +89,7 @@ class Trip:
 
         # set complete distance
         last_stop_customer_id = self.stopovers[-1].customer_id
-        self.distance = problem_instance['distance_matrix'][last_stop_customer_id][0]
+        self.distance = problem_instance['distance'][last_stop_customer_id][0]
 
         # update tool usages for the last day
         for (tool_id, usages) in self.used_tools_per_stop.items():
@@ -100,6 +116,10 @@ class Candidate:
         # ctor
         self.day_list = day_list
         self.valid = True  # gets set in repair()
+        self.fit = -1
+        return
+
+        # TODO do this elsewhere
         if fitness_ is not None:
             self.fit = fitness_
         else:
@@ -177,8 +197,11 @@ class Candidate:
             # 1. find critical tools for this day
             critical_tools = []
             for (tool_id, tool) in problem_instance['tools'].items():
-                if usages[tool_id][day_index]['max'] > tool.num_tools:
+                if usages[tool_id][day_index]['max'] > tool.num_available:
                     critical_tools.append(tool_id)
+
+            # FIXME remove this...
+            critical_tools = problem_instance["tools"].keys()
 
             # 2. loop over critical tools, make tsp for critical requests
             for critical_tool_id in critical_tools:
@@ -187,7 +210,7 @@ class Candidate:
                     usages[critical_tool_id][day_index]['min'] - usages[critical_tool_id][day_index - 1]['min']
 
                 # how much wiggle room do we have for this day?
-                wiggle_room = problem_instance['tools'][critical_tool_id].num_tools - \
+                wiggle_room = problem_instance['tools'][critical_tool_id].num_available - \
                               usages[critical_tool_id][day_index]['min']
 
                 # filter requests which contain a critical tool with this id
@@ -199,7 +222,6 @@ class Candidate:
                                            if (problem_instance['requests'][req_id].tool_id == critical_tool_id) and
                                            (req_status == 'fetch')]
 
-                route = [] # TODO route for the current car
                 # while len(critical_requests_deliver) + len(critical_requests_fetch) > 0:
                 # constraints:
                 # 1. sum distance per car < max distance
@@ -229,98 +251,104 @@ class Candidate:
 
                     req_deliver_customer_id = problem_instance['requests'][req_deliver_id].customer_id
                     req_deliver_num_tools   = problem_instance['requests'][req_deliver_id].num_tools
+                    fetch_counter = 0
 
                     # we start at the depot
+                    route = []
                     start_at_depot = StopOver(0, 0, 0)
                     route.append(start_at_depot)
 
-                    # calculate the metric, based on which we determine the fetch request to pick next
-                    # metric = scaled DISTANCE x scaled DELTA
-                    # where by distance we mean distance from current delivery request to the delivery request
-                    #          delta: the amount of tools we fetch - tools we deliver
-                    distances = {}
-                    deltas = {}
-                    for req_id in critical_requests_fetch:
-                        dist = problem_instance["distance_matrix"][req_deliver_id][req_id]
-                        delta = abs(problem_instance["requests"][req_id].num_tools
-                                    - req_deliver_num_tools)
+                    if critical_requests_fetch:
+                        # calculate the metric, based on which we determine the fetch request to pick next
+                        # metric = scaled DISTANCE x scaled DELTA
+                        # where by distance we mean distance from current delivery request to the delivery request
+                        #          delta: the amount of tools we fetch - tools we deliver
+                        distances = {}
+                        deltas = {}
+                        for req_id in critical_requests_fetch:
+                            req_fetch_customer_id = problem_instance["requests"][req_id].customer_id
+                            dist = problem_instance["distance"][req_deliver_customer_id][req_fetch_customer_id]
+                            delta = abs(problem_instance["requests"][req_fetch_customer_id].num_tools
+                                        - req_deliver_num_tools)
 
-                        distances[req_id] = dist
-                        deltas[req_id] = delta
+                            distances[req_id] = dist
+                            deltas[req_id] = delta
 
-                    min_dist  = min(distances.items(), key=lambda x: x[1])[1]
-                    max_dist  = max(distances.items(), key=lambda x: x[1])[1]
-                    min_delta = min(deltas.items(),    key=lambda x: x[1])[1]
-                    max_delta = max(deltas.items(),    key=lambda x: x[1])[1]
+                        min_dist  = min(distances.items(), key=lambda x: x[1])[1]
+                        max_dist  = max(distances.items(), key=lambda x: x[1])[1]
+                        min_delta = min(deltas.items(),    key=lambda x: x[1])[1]
+                        max_delta = max(deltas.items(),    key=lambda x: x[1])[1]
 
-                    # try to fill the route with other requests before the deliver request
-                    # a request fits if the delta between the num_tools is low and the distance is low
-                    requests_with_metric = {}
-                    for req_fetch_id in critical_requests_fetch:
-                        req_fetch_distance = problem_instance['distance_matrix'][req_deliver_id][req_fetch_id]
-                        req_fetch_delta = problem_instance['requests'][req_fetch_id].num_tools
+                        # try to fill the route with other requests before the deliver request
+                        # a request fits if the delta between the num_tools is low and the distance is low
+                        requests_with_metric = {}
+                        for req_fetch_id in critical_requests_fetch:
+                            req_fetch_customer_id = problem_instance["requests"][req_fetch_id].customer_id
+                            req_fetch_distance = problem_instance['distance'][req_deliver_customer_id][req_fetch_customer_id]
+                            req_fetch_delta = problem_instance['requests'][req_fetch_id].num_tools
 
-                        # distance is mapped to a range from 1 - 4
-                        # delta is mapped to a range from 1 - 10
-                        # because we want to focus more on the range than the distance
-                        score_distance = translate(req_fetch_distance, min_dist, max_dist, 1, 4)
-                        score_delta = translate(req_fetch_delta, min_delta, max_delta, 1, 10)
-                        score = score_distance * score_delta
-                        requests_with_metric[req_fetch_id] = score
+                            # distance is mapped to a range from 1 - 4
+                            # delta is mapped to a range from 1 - 10
+                            # because we want to focus more on the range than the distance
+                            score_distance = translate(req_fetch_distance, min_dist, max_dist, 1, 4)
+                            score_delta = translate(req_fetch_delta, min_delta, max_delta, 1, 10)
+                            score = score_distance * score_delta
+                            requests_with_metric[req_fetch_id] = score
 
-                    sorted_requests = sorted(requests_with_metric.items(), key=lambda x: x[1])
-                    counter = 0
+                        sorted_requests = sorted(requests_with_metric.items(), key=lambda x: x[1])
 
-                    # add requests to the list (to keep this simple, all fetch req. are before deliver req.)
-                    for (fetch_req_id, fetch_req_score) in sorted_requests:
+                        # add requests to the list (to keep this simple, all fetch req. are before deliver req.)
+                        for (fetch_req_id, fetch_req_score) in sorted_requests:
 
-                        # check if the distance is shorter than the max distance per car
-                        fetch_customer_id = problem_instance['requests'][fetch_req_id].customer_id
-                        fetch_num_tools   = problem_instance['requests'][fetch_req_id].num_tools
+                            # check if the distance is shorter than the max distance per car
+                            fetch_customer_id = problem_instance['requests'][fetch_req_id].customer_id
+                            fetch_num_tools   = problem_instance['requests'][fetch_req_id].num_tools
 
-                        tmp_route = route.copy()
+                            tmp_route = route.copy()
 
-                        # add the (CUSTOMER_ID, REQUEST_ID) tuples to the tmp route
-                        if counter > 0:
-                            # pretty stupid fix
-                            # but otherwise we would append the delivery and depot each time
-                            # that we append a new fetch
-                            tmp_route.pop()
-                            tmp_route.pop()
+                            # add the (CUSTOMER_ID, REQUEST_ID) tuples to the tmp route
+                            if fetch_counter > 0:
+                                # pretty stupid fix
+                                # but otherwise we would append the delivery and depot each time
+                                # that we append a new fetch
+                                tmp_route.pop()
+                                tmp_route.pop()
 
-                        tmp_route.append(StopOver(fetch_customer_id, fetch_req_id, fetch_num_tools))
-                        tmp_route.append(StopOver(req_deliver_customer_id, req_deliver_id, req_deliver_num_tools))
-                        tmp_route.append(StopOver(0, 0, 0))
+                            tmp_route.append(StopOver(fetch_customer_id, fetch_req_id, fetch_num_tools))
+                            tmp_route.append(StopOver(req_deliver_customer_id, req_deliver_id, req_deliver_num_tools))
+                            tmp_route.append(StopOver(0, 0, 0))
 
-                        counter += 1
-                        successful_move = is_route_valid(tmp_route)
-                        if successful_move:
-                            # we used this fetch request up and cannot re-use it in
-                            # further delivery requests
-                            critical_requests_fetch.remove(fetch_req_id)
-                            route = tmp_route
-                            tools_returned_to_depot = tmp_route[-1].num_tools
+                            fetch_counter += 1
+                            successful_move = is_route_valid(tmp_route)
+                            if successful_move:
+                                # we used this fetch request up and cannot re-use it in
+                                # further delivery requests
+                                critical_requests_fetch.remove(fetch_req_id)
+                                route = tmp_route
+                                tools_returned_to_depot = tmp_route[-1].num_tools
 
-                            # if we found some route that fetches more than delivers,
-                            # we're just gonna stop building up this route
-                            if tools_returned_to_depot >= 0:
-                                # TODO we could try to add another delivery request and re-do the sorted_requests loop
-                                #      though this probably won't make much sense for 1 or 2 tools
-                                #      we might need to define some border at which this behaviour gets triggered
-                                break
+                                # if we found some route that fetches more than delivers,
+                                # we're just gonna stop building up this route
+                                if tools_returned_to_depot >= 0:
+                                    # TODO we could try to add another delivery request and re-do the sorted_requests loop
+                                    #      though this probably won't make much sense for 1 or 2 tools
+                                    #      we might need to define some border at which this behaviour gets triggered
+                                    break
 
-                    if counter <= 0:
+                    if fetch_counter <= 0:
                         # if there weren't any fetch requests left, we're just gonna
                         # try to deliver and return to depot
-                        route = route.copy()
                         route.append(StopOver(req_deliver_customer_id, req_deliver_id, req_deliver_num_tools))
                         route.append(StopOver(0, 0, 0))
 
+                    print("PRE:", [str(so) for so in route], end="\n")
                     route_valid = is_route_valid(route)
+                    print("POST:", [str(so) for so in route], end="\n\n")
                     if route_valid:
                         trips_today.append(route)
                     else:
                         # at this point, I think we should just cancel this thing
+                        print("THE ROUTE SEEMS TO BE INVALID?")
                         self.valid = False
                         return -1
 
@@ -339,6 +367,7 @@ class Candidate:
                     unused_tools += trip[-1].num_tools
 
                 if unused_tools > wiggle_room:
+                    print("THE WIGGLE ROOM WAS EXHAUSTED")
                     self.valid = False
                     return -1
 
@@ -354,8 +383,10 @@ class Candidate:
             while non_critical_requests:
                 # sort them (based on their distance to the last point in the trip)
                 last_stopover_customer_id = current_trip.stopovers[-1].customer_id
-                non_critical_requests_sorted = sorted(non_critical_requests,
-                    key=lambda x: problem_instance['distance_matrix']
+
+                # FIXME: changed: sorted(non_critical_requests... -> sorted(non_critical_requests.items() ...
+                non_critical_requests_sorted = sorted(non_critical_requests.items(),
+                    key=lambda x: problem_instance['distance']
                         [last_stopover_customer_id][problem_instance['requests'][x[0]].customer_id])
 
                 # create a new stopover for the nearest neighbour (a stopover needs customer_id, request_id, num_tools)
@@ -720,16 +751,22 @@ class Candidate:
         return None
 
 
-def translate(value, leftMin, leftMax, rightMin, rightMax):
+def translate(value, left_min, left_max, right_min, right_max):
     # Figure out how 'wide' each range is
-    leftSpan = leftMax - leftMin
-    rightSpan = rightMax - rightMin
+    left_span = left_max - left_min
+    right_span = right_max - right_min
+
+    # if left_min == left_max, we can pick an arbitrary value for
+    # what we return
+    left_span = float(left_span)
+    if left_span == 0:
+        return right_max
 
     # Convert the left range into a 0-1 range (float)
-    valueScaled = float(value - leftMin) / float(leftSpan)
+    value_scaled = float(value - left_min) / left_span
 
     # Convert the 0-1 range into a value in the right range.
-    return rightMin + (valueScaled * rightSpan)
+    return right_min + (value_scaled * right_span)
 
 
 def is_route_valid(tmp_route):
@@ -745,13 +782,15 @@ def is_route_valid(tmp_route):
             continue
 
         last_customer_id = tmp_route[idx-1].customer_id
-        sum_distance += problem_instance['distance_matrix'][last_customer_id][customer_id]
+        sum_distance += problem_instance['distance'][last_customer_id][customer_id]
 
         loaded += change_amount
 
         if loaded > problem_instance["capacity"]:
+            print("CAPACITY.")
             return False
         elif sum_distance > problem_instance["max_trip_distance"]:
+            print("SUM DISTANCE.", sum_distance, problem_instance["max_trip_distance"])
             return False
 
         max_load = max(max_load, loaded)
@@ -762,6 +801,7 @@ def is_route_valid(tmp_route):
         # if we need to fetch something at the depot already,
         # we have to take into account that we are
         if (max_load + depot_load) > problem_instance["capacity"]:
+            print("CAPACITY THROUGH DEPOT LOADING FUCKED")
             return False
 
         tmp_route[0].num_tools = depot_load
@@ -855,6 +895,9 @@ def initial_population(population_size):
         candidate.repair2()
         if not candidate.valid:  # we need to create an additional candidate
             continue
+
+        fit_ = candidate.fitness_heuristic()
+        print("Fitness is: ", fit_)
         # print(candidate.get_extended_daylist())
         population.append(candidate)
         i += 1
