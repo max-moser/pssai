@@ -26,6 +26,7 @@ class Trip:
     def __init__(self):
         self.trip_distance_wo_last_stop = 0  # distance of this trip without the distance to the depot at the end
         self.stopovers = [StopOver(0, 0, 0)]  # list of requests the trip contains (0 = depot)
+        self.generated_by = "nn"  # TODO
         self.loaded_tools_per_stop = {tool_id: [0] for (tool_id, tool) in problem_instance['tools'].items()}
 
     def convert_from_stopovers(self, stopovers):
@@ -116,7 +117,8 @@ class Trip:
         self.distance = self.trip_distance_wo_last_stop + problem_instance['distance'][last_stop_customer_id][0]
 
         # update stopovers (return to the depot)
-        self.stopovers.append(StopOver(0, 0, 0))
+        if self.stopovers[-1].customer_id != 0:
+            self.stopovers.append(StopOver(0, 0, 0))
 
         # update tool usages for the last day
         for (tool_id, usages) in self.loaded_tools_per_stop.items():
@@ -374,7 +376,9 @@ class Candidate:
                     # print("POST:", [str(so) for so in route], end="\n\n")
                     if route_valid:
                         trip = Trip()
+                        trip.generated_by = "sfad"
                         trip.convert_from_stopovers(route)
+                        trip.generated_by = "sfad"
                         trips_today.append(trip)
                     else:
                         # at this point, I think we should just cancel this thing
@@ -400,7 +404,9 @@ class Candidate:
                         route_valid = is_route_valid(route, critical_tool_id)
                         if route_valid:
                             trip = Trip()
+                            trip.generated_by = "sfad"
                             trip.convert_from_stopovers(route)
+                            trip.generated_by = "sfad"
                             trips_today.append(trip)
                         else:
                             print("For some reason, could not fulfill the single fetch")
@@ -420,7 +426,6 @@ class Candidate:
                     # print("THE WIGGLE ROOM WAS EXHAUSTED")
                     self.valid = False
                     return -1
-
 
             # 3. loop over remaining (non critical) requests, use NN heuristic
             # 3.1 get all critical requests
