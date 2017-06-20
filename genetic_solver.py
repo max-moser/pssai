@@ -1028,3 +1028,4 @@ def solve_problem(problem):
     end = datetime.datetime.now()
     print('Done: ' + end.isoformat())
     print('Took me: ' + str((end - start).seconds) + 's')
+    return population
