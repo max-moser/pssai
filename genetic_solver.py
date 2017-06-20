@@ -2,7 +2,7 @@ import random
 import datetime
 
 PARAMETERS = {'population_size': 100, 'survivor_size': 5, 'mutation_possibility': 0.0015,
-              'number_of_generations': 100, 'max_depth_start': 2, 'max_depth_increase': 3, 'max_depth': 10}
+              'number_of_generations': 2, 'max_depth_start': 2, 'max_depth_increase': 3, 'max_depth': 10}
 problem_instance = None
 dbg = True
 
@@ -485,39 +485,50 @@ class Candidate:
 
         # 5. All TSPs of all cars have been generated.
         # sum up the cars, get max_cars, sum up distance
+
         max_cars = 0
         sum_cars = 0
         sum_distance = 0
         max_tools_used = {tool_id: 0 for (tool_id, _) in problem_instance['tools'].items()}
+        print(usages)
         for (day_idx, cars_day) in enumerate(cars_on_day):
 
             if day_idx == 0:  # on the first day, we havn't used tools previously (obviously)
                 max_tools_used_on_day = {tool_id: 0 for (tool_id, _) in problem_instance['tools'].items()}
             else:  # start with the min tools used from the previous day
-                max_tools_used_on_day = {tool_id: usages[0] for (tool_id, usages) in usages.items()}
+                max_tools_used_on_day = {tool_id: usages[day_idx - 1]['min'] for (tool_id, usages) in usages.items()}
 
             sum_cars += len(cars_day)
             if len(cars_day) > max_cars:
                 max_cars = len(cars_day)
 
-            for car in cars_day:
+            for (car_idx, car) in enumerate(cars_day):
+                max_additional_tools_car  = {tool_id: 0 for (tool_id, _) in problem_instance['tools'].items()}
+                tools_loaded_at_depot_car = {tool_id: 0 for (tool_id, _) in problem_instance['tools'].items()}
                 for trip in car:
                     for (tool_id, _) in problem_instance['tools'].items():
-                        # add all the stuff we load at the depot (first stop)
-                        tools_loaded_at_depot = trip.loaded_tools_per_stop[tool_id][0]
-                        max_tools_used_on_day[tool_id] = tools_loaded_at_depot
+                        # add all the stuff we load at the depot (first stop of the trip)
+                        tools_loaded_at_depot_car[tool_id] += trip.loaded_tools_per_stop[tool_id][0]
+                        if tools_loaded_at_depot_car[tool_id] > max_additional_tools_car[tool_id]:
+                            max_additional_tools_car[tool_id] = tools_loaded_at_depot_car[tool_id]
+                        # subtract what we bring back to the depot (last stop of the trip)
+                        tools_loaded_at_depot_car[tool_id] -= trip.loaded_tools_per_stop[tool_id][-1]
 
                     sum_distance += trip.distance
+
+                for (tool_id, _) in problem_instance['tools'].items():
+                    print(day_idx, car_idx, "additional_tools", tool_id, max_additional_tools_car[tool_id])
+                    max_tools_used_on_day[tool_id] += max_additional_tools_car[tool_id]
 
             # check if the max amount of tools is bigger on this day
             for (tool_id, max_amount) in max_tools_used.items():
                 if max_tools_used_on_day[tool_id] > max_amount:
                     max_tools_used[tool_id] = max_tools_used_on_day[tool_id]
 
-        #print(max_cars)
-        #print(sum_cars)
-        #print(sum_distance)
-        #print(max_tools_used)
+        print(max_cars)
+        print(sum_cars)
+        print(sum_distance)
+        print(max_tools_used)
 
         # sum up tool costs
         sum_tool_costs = 0
@@ -1070,10 +1081,11 @@ def solve_problem(problem):
 
         # debug_print('Population after mutation: ' + str([str(p) for p in population]))
         population = sorted(population, key=lambda p: p.fit)
-        debug_print('Best  fitness: ', new_population[-1].fit)
-        debug_print('Worst fitness: ', new_population[0] .fit)
+        debug_print('Best  fitness: ', population[0].fit)
+        population[0].fitness_heuristic()
+        debug_print('Worst fitness: ', population[-1] .fit)
 
     end = datetime.datetime.now()
     print('Done: ' + end.isoformat())
     print('Took me: ' + str((end - start).seconds) + 's')
-    return population
+    return population[0]  # return the best solution

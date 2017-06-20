@@ -135,9 +135,8 @@ def main(argv=None):
     print(json.dumps(problem, sort_keys=True, indent=4, default=str))
 
     # problem = Problem(problem['tools'], problem['customers'], problem['requests'])
-    candidate_solutions = genetic_solver.solve_problem(problem)
+    best_solution = genetic_solver.solve_problem(problem)
     # sorted_solutions = sorted(candidate_solutions, key=lambda sol: sol.fit)
-    best_solution = min(candidate_solutions, key=lambda sol: sol.fit)
     output_parser.create_output_file(problem, best_solution, args.file)
 
 def get_value_from_line(line):
