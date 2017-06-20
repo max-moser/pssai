@@ -198,9 +198,6 @@ class Candidate:
                 if usages[tool_id][day_index]['max'] > tool.num_available:
                     critical_tools.append(tool_id)
 
-            # FIXME remove this...
-            #critical_tools = problem_instance["tools"].keys()
-
             # 2. loop over critical tools, make tsp for critical requests
             for critical_tool_id in critical_tools:
                 # how many additional tools compared to the previous day are available?
@@ -319,7 +316,7 @@ class Candidate:
                             tmp_route.append(StopOver(0, 0, 0))
 
                             fetch_counter += 1
-                            successful_move = is_route_valid(tmp_route)
+                            successful_move = is_route_valid(tmp_route, critical_tool_id)
                             if successful_move:
                                 # we used this fetch request up and cannot re-use it in
                                 # further delivery requests
@@ -343,7 +340,7 @@ class Candidate:
                         route.append(StopOver(0, 0, 0))
 
                     #print("PRE:", [str(so) for so in route], end="\n")
-                    route_valid = is_route_valid(route)
+                    route_valid = is_route_valid(route, critical_tool_id)
                     #print("POST:", [str(so) for so in route], end="\n\n")
                     if route_valid:
                         trips_today.append(route)
@@ -368,7 +365,7 @@ class Candidate:
                         route.append(StopOver(crit_fetch_req.customer_id, crit_fetch_req.id, neg_fetch_req_num_tools))
                         route.append(StopOver(0, 0, 0))
 
-                        route_valid = is_route_valid(route)
+                        route_valid = is_route_valid(route, critical_tool_id)
                         if route_valid:
                             trips_today.append(route)
                         else:
@@ -403,7 +400,6 @@ class Candidate:
                 # sort them (based on their distance to the last point in the trip)
                 last_stopover_customer_id = current_trip.stopovers[-1].customer_id
 
-                # FIXME: changed: sorted(non_critical_requests... -> sorted(non_critical_requests.items() ...
                 non_critical_requests_sorted = sorted(non_critical_requests.items(),
                     key=lambda x: problem_instance['distance']
                         [last_stopover_customer_id][problem_instance['requests'][x[0]].customer_id])
@@ -742,7 +738,7 @@ def translate(value, left_min, left_max, right_min, right_max):
     return right_min + (value_scaled * right_span)
 
 
-def is_route_valid(route):
+def is_route_valid(route, tool_id):
     """Check if the route is valid.
 
     Check the supplied route against several limits, such as maximum driving distance and vehicle capacity.
@@ -756,6 +752,8 @@ def is_route_valid(route):
     sum_distance = 0
     loaded = 0
     max_load = 0
+    tool_size = problem_instance["tools"][tool_id].size
+
     for (idx, stopover) in enumerate(route):
         customer_id   = stopover.customer_id
         request_id    = stopover.request_id
@@ -773,7 +771,7 @@ def is_route_valid(route):
         # we lower the amount of loaded tools)
         loaded -= change_amount
 
-        if loaded > problem_instance["capacity"]:
+        if (loaded * tool_size) > problem_instance["capacity"]:
             #print("CAPACITY.")
             return False
         elif sum_distance > problem_instance["max_trip_distance"]:
@@ -787,7 +785,7 @@ def is_route_valid(route):
 
         # if we need to fetch something at the depot already,
         # we have to take into account that we are
-        if (max_load + abs(depot_load)) > problem_instance["capacity"]:
+        if ((max_load + abs(depot_load)) * tool_size) > problem_instance["capacity"]:
             #print("CAPACITY THROUGH DEPOT LOADING FUCKED")
             return False
 
