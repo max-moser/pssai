@@ -2,7 +2,7 @@ import random
 import datetime
 
 PARAMETERS = {'population_size': 100, 'survivor_size': 5, 'mutation_possibility': 0.0015,
-              'number_of_generations': 2, 'max_depth_start': 2, 'max_depth_increase': 3, 'max_depth': 10}
+              'number_of_generations': 100, 'max_depth_start': 2, 'max_depth_increase': 3, 'max_depth': 10}
 problem_instance = None
 dbg = True
 
@@ -263,7 +263,20 @@ class Candidate:
                         deltas = {}
                         for req_id in critical_requests_fetch:
                             req_fetch_customer_id = problem_instance["requests"][req_id].customer_id
-                            dist = problem_instance["distance"][req_deliver_customer_id][req_fetch_customer_id]
+                            dist_to_deliver = problem_instance["distance"][req_deliver_customer_id][req_fetch_customer_id]
+
+                            # if we already have one or more fetch requests used, we need the third to last item
+                            # (second to last being the deliver and last being the depot)
+                            # otherwise, we want the depot
+                            if successful_fetch_counter > 0:
+                                last_stopover_customer_id = route[-3].customer_id
+                                dist_to_last_stopover = problem_instance["distance"][req_deliver_customer_id][last_stopover_customer_id]
+                            else:
+                                dist_to_last_stopover = problem_instance["distance"][req_deliver_customer_id][0]
+
+                            # we take the distance from the last fetch stopover (might be the depot)
+                            # to the critical request and on to the deliver request
+                            dist = dist_to_last_stopover + dist_to_deliver
                             delta = abs(problem_instance["requests"][req_fetch_customer_id].num_tools
                                         - req_deliver_num_tools)
 
@@ -339,9 +352,9 @@ class Candidate:
                         route.append(StopOver(req_deliver_customer_id, req_deliver_id, req_deliver_num_tools))
                         route.append(StopOver(0, 0, 0))
 
-                    #print("PRE:", [str(so) for so in route], end="\n")
+                    # print("PRE:", [str(so) for so in route], end="\n")
                     route_valid = is_route_valid(route, critical_tool_id)
-                    #print("POST:", [str(so) for so in route], end="\n\n")
+                    # print("POST:", [str(so) for so in route], end="\n\n")
                     if route_valid:
                         trips_today.append(route)
                     else:
@@ -383,7 +396,7 @@ class Candidate:
                 opt_max = usages[critical_tool_id][day_index]['min']
                 actual_usage = unused_tools + opt_max
                 if actual_usage > available:
-                    print("THE WIGGLE ROOM WAS EXHAUSTED")
+                    # print("THE WIGGLE ROOM WAS EXHAUSTED")
                     self.valid = False
                     return -1
 
