@@ -9,12 +9,11 @@ def create_output_file(problem_instance, best_solution, filename_input):
 
     for (day_idx, cars_day) in enumerate(best_solution.cars_on_day):
         output_str += 'DAY = {}\n'.format(day_idx + 1)
-        output_str += 'NUMBER_OF_VEHICLES = {}\n'.format(len(cars_day))
+        #output_str += 'NUMBER_OF_VEHICLES = {}\n'.format(len(cars_day))
         for (car_idx, car) in enumerate(cars_day):
             output_str += '{}\tR\t'.format(car_idx + 1)
 
             for (trip_idx, trip) in enumerate(car):
-                output_str += "TRIPPPPP" + str(trip_idx) + " "
                 for (stopover_idx, stopover) in enumerate(trip.stopovers):
                     if stopover_idx == 0 and trip_idx != 0:  # ignore the depot if this is not the first trip
                         continue
