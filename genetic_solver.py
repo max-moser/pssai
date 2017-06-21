@@ -2,8 +2,8 @@ import random
 import datetime
 import copy
 
-PARAMETERS = {'population_size': 100, 'survivor_size': 5, 'mutation_possibility': 0.0015,
-              'number_of_generations': 2, 'max_depth_start': 2, 'max_depth_increase': 3, 'max_depth': 10}
+PARAMETERS = {'population_size': 100, 'survivor_size': 7, 'mutation_possibility': 0.0200,
+              'number_of_generations': 200, 'max_depth_start': 6, 'max_depth_increase': 3, 'max_depth': 15}
 problem_instance = None
 dbg = True
 
