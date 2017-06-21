@@ -1,0 +1,152 @@
+--------------------------------------------------------------------------------
+
+1. Definitionen
+  1.1  optimistisches Maximum:
+    Berechnung: #(angefragte Tools) + #(Tools, die sich bei Kunden befinden) - #(freigegebene Tools)
+    Idee:       jedes von einem Kunden wieder freigegebene Tool kann vom gleichen Lieferanten, der es
+                abgeholt hat, am gleichen Tag zum nächsten Kunden gebracht werden
+
+  1.2 pessimistisches Maximum:
+    Berechnung: #(angefragte Tools) + #(Tools, die sich bei Kunden befinden)
+    Idee:       keines der von Kunden freigegebenen Tools kann am gleichen Tag zu einem anderen
+                Kunden gebracht werden
+
+  1.3 Day-List:
+    Eine Liste mit einem Eintrag für jeden Tag
+    Jeder Eintrag besteht aus einem Dictionary, dessen Keys die Request IDs sind und dessen
+      Values ein String (mögliche Werte: "fetch" oder "deliver") sind -- je nachdem, ob
+      an diesem Tag der Request als beginnend ("deliver") oder endend ("fetch") festgelegt ist
+
+  1.4 Extended Day-List:
+    selbiges wie die Day-List, mit der zusätzlichen Erweiterung, dass für jeden Request
+      zwischen Start- und End-Eintrag noch zusätzliche Einträge mit dem Value "running" vorhanden
+      sind
+
+
+--------------------------------------------------------------------------------
+
+2. Datenstrukturen
+
+  2.1 problem_instance:
+    Output des Inputparsers. Globale Variable. Auf diese wird nur lesend zugegriffen.
+
+  2.2 Candidate-Objekt:
+    Die Repräsentation eines Mitglieds unserer Bevölkerung (Chromosome). Ein Candidate-
+    Objekt wird durch die Day-List repräsentiert (siehe 1.3). Weiters enthält es
+    Fitnesswert, und Validity-Flag.
+    Wichtige Functions sind: repair & rec_repair (siehe 4.), Berechnung der Fitness
+    via fitness_heuristic (siehe 3), Berechung des Minimums und Maximums an benötigten
+    Tools pro Tag via get_tool_usages (siehe 1.1 und 1.2), mutate.
+	
+  2.3 Trip-Objekt:
+    Ein Trip-Objekt beginnt und endet beim Depot. Dazwischen werden Requests delivert/gefetcht.
+    Mit der Funktion try_add kann versucht werden einen Stopover einzufügen. Per Definition
+    kann der erste Stopover immer eingefügt werden (es kann keinen Request geben der außerhalb
+    der max-car-distance-constraint/2 liegt, und keinen der mehr load als max-load-constraint benötigt). 
+    try_add gibt False zurück, wenn der nearest stop nicht mehr eingefügt werden kann (sei es 
+    aufgrund vom max-car-distance-constraint oder vom max-load-constraint).
+    Durch den Aufruf von finalize wird das Depot am Ende des Trips hinzugefügt. 
+    Der Trip ist damit abgeschlossen.
+
+  2.4 Stopover-Objekt:
+    Repräsentiert einen Stop auf einem Trip. Dieser besteht aus customer_id, request_id und num_tools.
+    num_tools ist negativ, wenn der Request ein Fetch-Request ist.
+
+
+--------------------------------------------------------------------------------
+
+3. Heuristiken zur Berechnung der Fitness Function:
+
+für Autos:
+  Entscheidung zwischen Nearest Neighbour und "Straight Fetch & Deliver":
+    falls das pessimistische Maximum für eine Tool-Art an einem Tag höher ist als
+    die Availability des Tools, so wird dieses Tool an diesem Tag als "kritisch"
+    betrachtet und "Straight Fetch & Deliver" angewandt -- ansonsten kommt
+    Nearest Neighbour zum Einsatz
+
+    - Straight Fetch & Deliver
+      für jedes Deliver/Fetch-Request-Paar wird ein eigenes Auto allokiert,
+      welches nichts Anderes macht, als dieses Pärchen abzuarbeiten
+      (Achtung: es kann Fälle geben, in denen nicht einmal das möglich ist!
+                -> und zwar, wenn DIST(D -> A -> B -> D) > MAX_DIST)
+      Die Ergebnisse vom SFaD werden zu Trips-Objekte umgewandelt.
+
+    - Nearest Neighbour
+      Versucht, nahe zusammenliegende Kunden mit möglichst wenigen Autos zu bedienen.
+      Erstellt Trip-Objekte, es wird für alle Reqeusts mit nicht kritischen Tools von 
+      diesem Tag einfach die NN Heuristik angewandt.
+      
+    Nachdem für einen Tag alle Requests abgearbeitet sind, sei es durch NN oder durch
+    SFaD, wird über die Trips iteriert. Ein Auto wird solange mit Trips befüllt, solange
+    der max-car-distance contraint erfüllt ist.
+
+Für das endgültige Berechnen der Fitnessfunktion haben wir dann für den Kandidaten
+für jeden Tag eine Liste an Autos, welche eine Liste an Tools enthält. Mit diesen Infos
+kann die Fitness exakt berechnet werden.
+
+
+--------------------------------------------------------------------------------
+
+4. Reparieren von Lösungen
+  aus der oben genannten Day-List kann für jede Tool-Art eine Usage-List berechnet
+    werden, welche für jeden Tag das benötigte optimistische/pessimistische Maximum
+    beinhält (im weiteren Verlauf als "Usages" bezeichnet)
+
+  anhand dieser Usages-Liste können wir für jeden Tag feststellen, ob das opt. Max.
+    die AVAILABLE-Menge eines Tools überschritten wird (in diesem Fall haben wir ein
+    Problem, da zu viele Deliver-Requests innerhalb von zu kurzer Zeit auftreten)
+
+  somit sind bekannt:
+    * an welchen Tagen wir ein Problem haben
+      (die Überschreitungen der AVAILABLE-Menge werden als "Peaks" bezeichnet)
+    * (über die (Extended) Day-List) auch die an jenem Tag "negativ" beteiligten Aufträge
+      (d.h. entweder mit als "deliver" oder "running" gespeicherte Aufträge)
+
+  nun probieren wir, die problematischen Aufträge irgendwie zu verschieben
+
+  dazu benutzen wir eine rekursive Funktion, welche per Iterative Deepening Search
+    aufgerufen wird und ein "Move-Dictionary" als Parameter hat:
+      im Move-Dict sind die problematischen Aufträge (bzw. deren IDs) die Keys;
+        Values sind Listen von den Tagen, an welchen der Auftrag beginnen kann
+
+      der Auftrag mit dem größten "Impact" (d.h. größte Anzahl benötigter Tools)
+        wird gewählt und an eine der möglichen Positionen verschoben
+
+      nun wird eine temporäre Day-List und Usages-List berechnet und geprüft, ob
+        die Peaks durch das Verschieben beseitigt worden sind
+        -> falls ja, wird die Suche beendet und die temporäre Day-List übernommen
+            (d.h. die Änderungen werden "festgeschrieben")
+        -> falls nein, wird eine Kopie des Move-Dicts angefertigt, in welcher der
+            aktuelle Auftrag als nicht mehr verschiebbar markiert ist -- und der
+            rekursive Aufruf wird mit dem neu erzeugten Move-Dict aufgerufen
+            (solange die maximale Tiefe nicht erreicht wurde)
+
+  Anmerkungen:
+    * da jeder Auftrag "sofort" (also ohne benötigte Zwischenschritte)
+      auf jeden Tag verschoben werden kann, ist immer nur maximal eine Verschiebung nötig
+      -> Motivation dafür, dass bei rekursivem Aufruf das Move-Dict eingeschränkt wird
+
+    * eine Lösung kann sein, dass nicht der größte Request verschoben werden muss, sondern
+      ein (oder mehrere) kleinere
+      -> Motivation für IDS und Speichern auch der aktuellen Position im Move-Dict
+
+  Bedenken:
+    * kann es sein, dass auch Aufträge, welche nicht unmittelbar beteiligt sind, verschoben
+      werden müssen?
+
+    * wenn durch eine Verschiebung ein neuer Peak generiert wurde, müsste die Reparatur
+      auf diesen neuen Peak ausgeweitet werden (wobei der verschobene Auftrag allerdings
+      wiederum nicht mehr verschoben werden darf)
+
+-----------------------------------------------------------------------------------------------
+(    Ansatz Wolfi:                                                                            )
+(      man nimmt vom höchsten Peak einen Auftrag und verschiebt ihn.                          )
+(      danach checkt man, was der neue höchste Peak ist und checkt, ob der kleiner als der    )
+(        originale höchste Peak ist:                                                          )
+(        NEIN -> Schritt wird verworfen, anderer Auftrag der höchsten Peaks wird verschoben   )
+(        JA   -> weiter machen mit dem neuen höchsten Peak                                    )
+(      dadurch, dass der höchste Peak immer kleiner wird, wird der höchste Peak irgendwann    )
+(        kleiner als durch die Variable AVAILABLE limitiert                                   )
+(      oder, wenn am höchsten Peak kein alternativer Auftrag mehr vorhanden ist:              )
+(        exhaustive search beginnen, oder was auch immer.                                     )
+-----------------------------------------------------------------------------------------------

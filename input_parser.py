@@ -50,8 +50,8 @@ class Request:
         # ctor
         self.id          = int(id_)
         self.customer_id = int(customer_id)
-        self.first_day   = int(first_day) - 1 # for convenience when working with arrays of day-numbers
-        self.last_day    = int(last_day)  - 1 # for convenience when working with arrays of day-numbers
+        self.first_day   = int(first_day) - 1  # for convenience when working with arrays of day-numbers
+        self.last_day    = int(last_day)  - 1  # for convenience when working with arrays of day-numbers
         self.num_days    = int(num_days)
         self.tool_id     = int(tool_id)
         self.num_tools   = int(num_tools)
@@ -71,7 +71,6 @@ class Request:
 def main(argv=None):
     parser = argparse.ArgumentParser(description='Genetic algorithm for the VeRoLog Solver Challenge 2017')
     parser.add_argument('file', help='problem instance, txt-file')
-    # TODO add more arguments? (algorithm parameters?)
     args = parser.parse_args(argv)
 
     # read the file
@@ -110,34 +109,30 @@ def main(argv=None):
         elif line.startswith('TOOLS'):
             state = 'tools'
         elif line.startswith('COORDINATES'):
-            state = 'customers' # rename coordinates to customers, because it's easier to understand
+            state = 'customers'  # rename coordinates to customers, because it's easier to understand
         elif line.startswith('REQUESTS'):
             state = 'requests'
         elif line.startswith('DISTANCE'):
-            state = 'distance' # needed => so that distance matrix lines are not interpreted as request lines
+            state = 'distance'  # needed => so that distance matrix lines are not interpreted as request lines
 
         elif line.strip() != '':
             if state == 'tools':
                 tool = Tool.create_from_line(line)
-                problem['tools'].update({tool.id:tool}) # dictionary entry; key = tool.id, value = tool
+                problem['tools'].update({tool.id:tool})  # dictionary entry; key = tool.id, value = tool
             elif state == 'customers':
                 customer = Customer.create_from_line(line)
                 problem['customers'].update({customer.id:customer})
             elif state == 'requests':
                 request = Request.create_from_line(line)
                 problem['requests'].update({request.id:request})
-            #elif state == 'distance':
-                #problem['distance'].append(Distance.create_from_line(line))
 
     create_distance_matrix(problem)
-    #print(problem)
-    #pretty print via json.dumps
-    #print(json.dumps(problem, sort_keys=True, indent=4, default=str))
+    # pretty print via json.dumps
+    # print(json.dumps(problem, sort_keys=True, indent=4, default=str))
 
-    # problem = Problem(problem['tools'], problem['customers'], problem['requests'])
     best_solution = genetic_solver.solve_problem(problem)
-    # sorted_solutions = sorted(candidate_solutions, key=lambda sol: sol.fit)
     output_parser.create_output_file(problem, best_solution, args.file)
+
 
 def get_value_from_line(line):
     return line.split('=', 1)[1].strip()
