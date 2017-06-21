@@ -7,6 +7,23 @@ http://www.dbai.tuwien.ac.at/staff/musliu/ProblemSolvingAI/
 ## Information about the challenge:
 https://verolog.ortec.com/
 
+## Requirements
+
+Python 3
+
+## Usage
+
+```
+python3 input_parser.py TEST_INSTANCE.TXT
+```
+
+The program will generate the solution file in the same directory as the input
+file, with a naming like "TEST_INSTANCE.sol.genetic.TXT" after running through.
+
+The program requires the three files "input_parser.py", "genetic_solver.py" and
+"output_parser.py" to be in the same directory, since all of them contain parts
+of the entire script.
+
 ## Contributors:
 Maximilian Moser, 1326252
 Wolfgang Weintritt, 1327191
