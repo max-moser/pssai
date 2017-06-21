@@ -66,7 +66,7 @@ ORTEC_Test_03.sol.genetic_1031.txt:
   Cost:
     36911832
   Remarks:
-    runtime around 666s (~11m)
+    a run with a VERY LOW number of generations
 
 
 ORTEC_Test_03.sol.genetic_1044.txt:
@@ -75,6 +75,7 @@ ORTEC_Test_03.sol.genetic_1044.txt:
   Cost:
     33402374
   Remarks:
+    runtime around 666s (~11m)
     noticably better than with low number of generations
 
 
